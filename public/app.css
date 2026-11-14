@@ -379,9 +379,6 @@ main {
   gap: 24px;
   align-items: start;
 }
-.order-card {
-  min-height: 350px;
-}
 .order-card h2 {
   max-width: 78%;
 }
@@ -772,7 +769,8 @@ select {
   padding: 5px 12px;
 }
 .approval.approved {
-  height: 44px;
+  min-height: 44px;
+  height: auto;
   padding: 10px 16px;
   color: var(--green);
   font-size: 13px;
@@ -1245,9 +1243,6 @@ pre {
   .card {
     padding: 20px;
   }
-  .order-card {
-    min-height: 360px;
-  }
   .order-card .between {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -1455,16 +1450,6 @@ pre {
     transition: none !important;
     animation: none !important;
   }
-}
-/* Reserve the checklist's height so the dashboard card stays still while checking. */
-.order-card {
-  min-height: 446px;
-  display: flex;
-  flex-direction: column;
-}
-.order-card .order-actions {
-  margin-top: auto;
-  padding-top: 24px;
 }
 .order-table td:last-child {
   min-width: 76px;

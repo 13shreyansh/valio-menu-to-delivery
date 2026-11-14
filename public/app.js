@@ -32,7 +32,7 @@ const time = (v) =>
         "en-GB",
         { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Helsinki" },
       )
-    : "Not supplied";
+    : "Time to confirm";
 const btn = (label, action, cls = "", attrs = "") =>
   `<button class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;
 let S = {
@@ -207,7 +207,7 @@ function render() {
     (S.drawer ? "has-drawer " : "") +
     (S.drawer === "receipt" ? "has-receipt" : "");
   $("#app").innerHTML =
-    `<aside class="sidebar ${S.menu ? "open" : ""}"><div class="brand"><div class="wordmark">Valio Aimo</div><div class="tiny">Hotel Aurora</div></div><nav>${nav.map(([label, path, ic]) => `<a class="nav-item ${active === path ? "current" : ""}" href="${path}" data-nav="${path}">${icon(ic, "nav-icon")}${label}</a>`).join("")}</nav>${S.accountMenu ? btn(icon("log-out") + "Sign out", "logout", "ghost") : ""}<button class="account-row" data-action="account-menu"><span class="avatar">SV</span><span>Sanna Virtanen<span class="tiny" style="display:block">Head chef</span></span></button></aside><div class="workspace"><header class="topbar"><h1>${esc(title())}</h1><span class="wordmark mobile-brand">Valio Aimo</span><div class="top-actions">${btn(icon("mic") + '<span class="ask-label">Ask Valio</span>', "ask", "secondary ask-open", 'aria-label="Ask Valio"')}${btn(icon("bell") + (unread() ? '<i class="unread"></i>' : ""), "bell", "icon-btn bell", 'aria-label="Account events"')}${btn(icon("menu"), "menu", "icon-btn mobile-menu", 'aria-label="Open menu"')}</div></header><main><h1 class="mobile-title">${esc(title())}</h1>${S.error ? `<div role="alert" class="error">${esc(S.error)}</div>` : ""}${!S.order || !S.account ? '<div class="skeleton" aria-label="Loading account"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>' : page()}</main>${footer()}</div>${S.drawer ? drawer() : ""}${S.bell ? events() : ""}${S.why ? why() : ""}${S.invoice ? invoice() : ""}`;
+    `<aside class="sidebar ${S.menu ? "open" : ""}"><div class="brand"><div class="wordmark">Valio Aimo</div><div class="tiny">${esc(S.account?.name || "Hotel Aurora")}</div></div><nav>${nav.map(([label, path, ic]) => `<a class="nav-item ${active === path ? "current" : ""}" href="${path}" data-nav="${path}">${icon(ic, "nav-icon")}${label}</a>`).join("")}</nav>${S.accountMenu ? btn(icon("log-out") + "Sign out", "logout", "ghost") : ""}<button class="account-row" data-action="account-menu"><span class="avatar">SV</span><span>Sanna Virtanen<span class="tiny" style="display:block">Head chef</span></span></button></aside><div class="workspace"><header class="topbar"><h1>${esc(title())}</h1><span class="wordmark mobile-brand">Valio Aimo</span><div class="top-actions">${btn(icon("mic") + '<span class="ask-label">Ask Valio</span>', "ask", "secondary ask-open", 'aria-label="Ask Valio"')}${btn(icon("bell") + (unread() ? '<i class="unread"></i>' : ""), "bell", "icon-btn bell", 'aria-label="Account events"')}${btn(icon("menu"), "menu", "icon-btn mobile-menu", 'aria-label="Open menu"')}</div></header><main><h1 class="mobile-title">${esc(title())}</h1>${S.error ? `<div role="alert" class="error">${esc(S.error)}</div>` : ""}${!S.order || !S.account ? '<div class="skeleton" aria-label="Loading account"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>' : page()}</main>${footer()}</div>${S.drawer ? drawer() : ""}${S.bell ? events() : ""}${S.why ? why() : ""}${S.invoice ? invoice() : ""}`;
 }
 function unread() {
   return S.account?.events.some(
@@ -376,7 +376,7 @@ function approvalTitle(c, o) {
 }
 function approval(c, o) {
   if (c.approved)
-    return `<div class="approval approved" data-check="${esc(c.id)}">${icon("check")}<span class="approval-copy">Approved by Sanna · ${esc(c.approved_at)}</span>${btn("Undo", "unapprove", "link", `data-value="${esc(c.id)}"`)}</div>`;
+    return `<div class="approval approved" data-check="${esc(c.id)}">${icon("check")}<span class="approval-copy">${approvalTitle(c, o)}: approved by Sanna · ${esc(c.approved_at)}</span>${btn("Undo", "unapprove", "link", `data-value="${esc(c.id)}"`)}</div>`;
   return `<div class="approval" data-check="${esc(c.id)}">${icon(c.kind === "swap" ? "repeat-2" : c.kind === "pack" ? "package" : c.kind === "budget" ? "wallet" : "circle-alert")}<div class="approval-copy"><div class="approval-title">${approvalTitle(c, o)}</div><p>${esc(c.text)}</p>${c.reopened ? '<p class="reopened">You changed the quantity, so please check this again.</p>' : ""}</div><div class="approval-buttons">${c.kind === "gap" ? btn(c.row_ids.length ? "Restore quantity" : "Change menu", c.row_ids.length ? "restore" : "ask", "secondary", `data-value="${esc(c.row_ids[0] || "")}"`) : btn(c.kind === "budget" ? "Change order" : "Keep original", c.kind === "pack" ? "small-cream" : c.kind === "swap" ? "keep-original" : "change-order", "ghost")}${c.can_approve ? btn(c.kind === "budget" ? "Approve once" : "Approve", "approve", "primary", `data-value="${esc(c.id)}" ${S.busy ? "disabled" : ""}`) : ""}</div></div>`;
 }
 function eventTag(o) {
@@ -398,7 +398,7 @@ function orderPage(o, readonly = false) {
         (r) => readonly || S.filter === "all" || r.change,
       );
       if (!rows.length) return "";
-      return `<section class="delivery-section"><div class="day-header"><div><h3>${date(d.date, true)} · arrival time to confirm</h3><p>Order by ${d.cutoff ? date(d.cutoff) + " " + time(d.cutoff) : "cut-off not supplied"}</p></div><span>${money(d.subtotal)}</span></div>${table(["Product", "Quantity", "Unit price", "Total", ""], rows.map((r) => `<tr data-row="${esc(r.id)}"><td class="product"><div class="product-name">${esc(r.name)}</div><span class="tiny">${r.pack} ${esc(r.unit)} · <span class="product-code">${esc(r.product_id)}</span>${r.previous_units !== null && r.previous_units !== undefined && r.previous_units !== r.units ? `<span class="was"><s>was ${r.previous_units}</s></span>` : ""}</span>${r.change ? `<span class="tag">${r.change === "Swapped" ? esc(r.change_reason) : esc(eventTag(o))}</span>` : ""}</td><td>${readonly ? r.units : `<div class="stepper">${btn("−", "qty", "", `aria-label="Less ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units - 1}" ${S.busy || r.units === 0 ? "disabled" : ""}`)}<span>${r.units}</span>${btn("+", "qty", "", `aria-label="More ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units + 1}" ${S.busy ? "disabled" : ""}`)}</div>`}</td><td class="money unit-price">${money(r.unit_price)}</td><td class="money">${money(r.total)}</td><td>${btn("Why?", "why", "link why " + (!r.change ? "unchanged" : ""), `data-value="${esc(r.id)}"`)}</td></tr>`).join(""), "order-table")}</section>`;
+      return `<section class="delivery-section"><div class="day-header"><div><h3>${date(d.date, true)} · ${o.historical ? "delivered" : "arrival time to confirm"}</h3><p>${d.cutoff ? "Order by " + date(d.cutoff) + " " + time(d.cutoff) : o.historical ? "Order-by time was not recorded" : "Order-by time to confirm"}</p></div><span>${money(d.subtotal)}</span></div>${table(["Product", "Quantity", "Unit price", "Total", ""], rows.map((r) => `<tr data-row="${esc(r.id)}"><td class="product"><div class="product-name">${esc(r.name)}</div><span class="tiny">${r.pack} ${esc(r.unit)} · <span class="product-code">${esc(r.product_id)}</span>${r.previous_units !== null && r.previous_units !== undefined && r.previous_units !== r.units ? `<span class="was"><s>was ${r.previous_units}</s></span>` : ""}</span>${r.change ? `<span class="tag">${r.change === "Swapped" ? esc(r.change_reason) : esc(eventTag(o))}</span>` : ""}</td><td>${readonly ? r.units : `<div class="stepper">${btn("−", "qty", "", `aria-label="Less ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units - 1}" ${S.busy || r.units === 0 ? "disabled" : ""}`)}<span>${r.units}</span>${btn("+", "qty", "", `aria-label="More ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units + 1}" ${S.busy ? "disabled" : ""}`)}</div>`}</td><td class="money unit-price">${money(r.unit_price)}</td><td class="money">${money(r.total)}</td><td>${btn("Why?", "why", "link why " + (!r.change ? "unchanged" : ""), `data-value="${esc(r.id)}"`)}</td></tr>`).join(""), "order-table")}</section>`;
     })
     .join("")}`;
 }
@@ -435,7 +435,7 @@ function deliveries() {
     rows
       .map(
         (d) =>
-          `<tr><td>${date(d.date, true)}</td><td>To confirm</td><td>${d.cutoff ? date(d.cutoff) + " " + time(d.cutoff) : "Not supplied"}</td><td>${d.rows.length}</td><td class="money">${money(d.subtotal)}</td><td>${esc(d.order)}</td></tr>`,
+          `<tr><td>${date(d.date, true)}</td><td>To confirm</td><td>${d.cutoff ? date(d.cutoff) + " " + time(d.cutoff) : "Order-by time to confirm"}</td><td>${d.rows.length}</td><td class="money">${money(d.subtotal)}</td><td>${esc(d.order)}</td></tr>`,
       )
       .join(""),
   );
@@ -592,9 +592,29 @@ function callProducts(c, o) {
     })
     .join("");
 }
+function callSummary(c) {
+  const count =
+    c.product_count ?? c.product_ids?.length ?? c.response?.products?.length;
+  const products =
+    count === undefined ? "" : ` · ${count.toLocaleString("en-GB")} products`;
+  const delivery = c.requested_date ? ` for ${date(c.requested_date)}` : "";
+  if (c.path?.includes("products/download"))
+    return `Checked Valio's catalogue${products}`;
+  if (c.path?.includes("delivery-reliability"))
+    return "Checked Valio's delivery history";
+  if (c.path?.includes("carbon-footprint"))
+    return "Checked Valio's product footprint data";
+  if (c.source === "Gemini") return "Read your kitchen request";
+  const reused = c.method === "CACHE";
+  if (c.path?.includes("availability"))
+    return `${reused ? "Used recent Valio stock checks" : "Checked stock at Valio"}${products}${delivery}`;
+  if (c.path?.includes("price"))
+    return `${reused ? "Used recent Valio prices" : "Checked prices at Valio"}${products}${delivery}`;
+  return `Checked Valio product data${products}${delivery}`;
+}
 function receipt() {
   const o = S.readOrder || S.order;
-  return `<aside class="drawer receipt" aria-label="How this was decided"><header class="drawer-header"><h3>How this was decided</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close receipt"')}</header><div class="drawer-body"><h3>Your request</h3><p>${esc(o.request || "Prepare next week’s order from our connected menu, bookings and current stock.")}</p><span class="tiny">${time(o.request_at || o.quote_at)}</span><h3>What Valio checked</h3>${o.evidence.calls.map((c, i) => `<div class="receipt-entry">${callProducts(c, o)}<p>${esc(c.purpose || `${c.method === "CACHE" ? "Reused recent" : "Checked"} ${c.path || "Valio product data"}`)}${c.product_ids ? ` · ${c.product_ids.length} products for ${date(c.requested_date)}` : ""}</p><p class="tiny">${esc(c.source || "Valio product data")} · ${time(c.at)}${c.duration_ms !== undefined ? " · " + c.duration_ms + " ms" : ""}</p><details><summary><span style="color:var(--blue)">Details</span></summary><pre>${esc(JSON.stringify({ request: c.request || { method: c.method, path: c.path, customer: c.customer, products: c.product_ids, date: c.requested_date }, response: c.response || { status: c.status, source: c.source }, timing_ms: c.duration_ms }, null, 2))}</pre></details></div>`).join("")}<h3>Rules applied</h3><p>Weekly limit ${money(o.budget)} → ${o.checks.some((c) => c.id === "budget") ? "asked Sanna" : "within limit"}</p><p class="small muted">No ${esc(o.rules.allergens.join(", "))} → ${o.rows.length} products checked</p>${o.checks.map((c) => `<p class="small muted">${c.kind === "swap" ? "Ask before swap" : c.kind === "pack" ? "Larger pack" : c.kind === "budget" ? "Spend approval" : "Delivery check"} → ${c.approved ? "OK’d " + esc(c.approved_at) : "needs your OK"}</p>`).join("")}</div></aside>`;
+  return `<aside class="drawer receipt" aria-label="How this was decided"><header class="drawer-header"><h3>How this was decided</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close receipt"')}</header><div class="drawer-body"><h3>Your request</h3><p>${esc(o.request || "Prepare next week’s order from our connected menu, bookings and current stock.")}</p><span class="tiny">${time(o.request_at || o.quote_at)}</span><h3>What Valio checked</h3>${o.evidence.calls.map((c) => `<div class="receipt-entry"><p>${esc(callSummary(c))}${c.at ? " · " + time(c.at) : ""}</p>${callProducts(c, o)}<p class="tiny">${c.source === "Gemini" ? "Kitchen request" : "Valio product data"}${!c.at ? " · Check time was not recorded" : ""}</p><details><summary><span style="color:var(--blue)">Details</span></summary><pre>${esc(JSON.stringify({ request: c.request || { method: c.method, path: c.path, customer: c.customer, products: c.product_ids, date: c.requested_date }, response: c.response || { status: c.status, source: c.source, product_count: c.product_count }, checked_at: c.at, original_checks: c.origin_checked_at, timing_ms: c.duration_ms }, null, 2))}</pre></details></div>`).join("")}<h3>Rules applied</h3><p>Weekly limit ${money(o.budget)} → ${o.checks.some((c) => c.id === "budget") ? "asked Sanna" : "within limit"}</p><p class="small muted">No ${esc(o.rules.allergens.join(", "))} → ${o.rows.length} products checked</p>${o.checks.map((c) => `<p class="small muted">${c.kind === "swap" ? "Ask before swap" : c.kind === "pack" ? "Larger pack" : c.kind === "budget" ? "Spend approval" : "Delivery check"} → ${c.approved ? "OK’d " + esc(c.approved_at) : "needs your OK"}</p>`).join("")}</div></aside>`;
 }
 function why() {
   const o = S.readOrder || S.order;

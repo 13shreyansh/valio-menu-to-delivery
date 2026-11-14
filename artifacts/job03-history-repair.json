@@ -1,0 +1,29 @@
+{
+  "at": "2026-11-14T23:40:55.090845+02:00",
+  "archive": "archives/job03-cafac1499bdc4dfab0f00c76a5d36df4",
+  "legacy_orders_archived": 18,
+  "active_orders": [
+    {
+      "order_number": "AU-3D4CDDA2",
+      "placed_at": "2026-10-25T15:00:00+02:00",
+      "total": 1079.06,
+      "products": 46,
+      "week": 44
+    },
+    {
+      "order_number": "AU-FD7D6C30",
+      "placed_at": "2026-11-01T15:00:00+02:00",
+      "total": 1220.69,
+      "products": 46,
+      "week": 45
+    },
+    {
+      "order_number": "AU-575D3F8B",
+      "placed_at": "2026-11-08T15:00:00+02:00",
+      "total": 1371.68,
+      "products": 47,
+      "week": 46
+    }
+  ],
+  "note": "Sample kitchen history created through actual order engine, valued with current real Valio quotes. Historical delivery dates are kitchen records, not historical supplier responses."
+}

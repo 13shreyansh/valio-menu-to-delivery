@@ -22,7 +22,11 @@ for (const [name, viewport] of [
   ["phone", { width: 390, height: 844 }],
 ])
   test(`${name}: real wedding ordering flow`, async ({ browser }) => {
-    const ctx = await browser.newContext({ viewport });
+    const kitchen = require("../scripts/test_kitchen.cjs")();
+    const ctx = await browser.newContext({
+      viewport,
+      extraHTTPHeaders: kitchen.headers,
+    });
     const p = await ctx.newPage();
     const errors = [];
     p.on("pageerror", (e) => errors.push(e.message));
@@ -92,6 +96,17 @@ for (const [name, viewport] of [
     await expect(
       p.getByRole("button", { name: "Place order", exact: true }),
     ).toBeEnabled();
+    for (const [id, title] of [
+      ["swap", "Swap salmon for"],
+      ["pack", "Buy cream as"],
+      ["budget", "weekly limit"],
+    ]) {
+      await expect(p.locator(`[data-check="${id}"]`)).toContainText(title);
+      await expect(p.locator(`[data-check="${id}"]`)).toContainText(
+        "approved by Sanna",
+      );
+    }
+    await shot(p, `${name}-approved-titles`);
     // Increasing cream affects both its pack approval and the weekly spend approval.
     const more = p
       .locator('tr[data-row="2026-11-20-cream"] button[data-action="qty"]')
@@ -131,7 +146,7 @@ for (const [name, viewport] of [
     await p
       .getByRole("button", { name: "How this was decided", exact: true })
       .click();
-    await expect(p.locator(".receipt")).toContainText("Valio API");
+    await expect(p.locator(".receipt")).toContainText("Valio product data");
     await p.locator(".receipt details").first().locator("summary").click();
     await expect(p.locator(".receipt pre").first()).toBeVisible();
     await shot(p, `${name}-receipt`);
@@ -167,7 +182,11 @@ for (const [name, viewport] of [
       const raw = execFileSync(
         ".venv/bin/python",
         ["scripts/mcp_client.py", base],
-        { encoding: "utf8", timeout: 240000 },
+        {
+          encoding: "utf8",
+          timeout: 240000,
+          env: { ...process.env, VALIO_TEST_RUN: kitchen.run },
+        },
       );
       const report = JSON.parse(raw.trim());
       fs.writeFileSync(

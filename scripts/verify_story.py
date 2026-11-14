@@ -1,7 +1,8 @@
+import uuid
 """Recorded-story backend acceptance over live HTTP; not browser or microphone proof."""
 import httpx,json
 from pathlib import Path
-c=httpx.Client(base_url='https://valio-menu-to-delivery.vercel.app',timeout=180)
+c=httpx.Client(headers={"x-valio-test-run":uuid.uuid4().hex},base_url='https://valio-menu-to-delivery.vercel.app',timeout=180)
 def get(path):
  r=c.get('/api/sheet'+path);r.raise_for_status();return r.json()
 def post(path,body):

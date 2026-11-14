@@ -327,3 +327,27 @@ def test_a_conference_photo_does_not_replace_a_wedding_on_the_same_day(account):
     events = [s for s in out["services"] if s.get("wedding")]
     assert any(s["recipe"] == "tart" and s["covers"] == 120 for s in events)
     assert any(s["recipe"] == "breakfast" and s["covers"] == 40 for s in events)
+
+
+def test_new_external_service_draft_returns_growth_check_immediately(account):
+    account.save_rules({"growth_limit":1})
+    o=account.new_draft(services=copy.deepcopy(old.BASE_SERVICES))
+    assert any(c['id']=='growth' for c in o['checks'])
+    assert not o['can_place']
+    for c in o['checks']:
+        if c['can_approve']:o=account.change(o['draft_id'],'approve',c['id'])
+    assert account.place(o['draft_id'])['status']=='placed'
+
+
+def test_reconstructed_past_delivery_keeps_flow_totals_and_supplier_evidence(account):
+    from scripts.repair_aurora import delivered_copy
+    o=account.new_draft()
+    for c in o['checks']:
+        if c['can_approve']:o=account.change(o['draft_id'],'approve',c['id'])
+    placed=account.place(o['draft_id'])
+    past=delivered_copy(placed,'2026-11-02')
+    assert past['total']==placed['total']==round(sum(r['total'] for r in past['rows']),2)
+    assert [d['date'] for d in past['deliveries']]==['2026-11-02','2026-11-04','2026-11-06']
+    assert past['placed_at'].startswith('2026-11-01')
+    assert past['evidence']==placed['evidence']
+    assert set(r['delivery'] for r in past['rows'])=={'2026-11-02','2026-11-04','2026-11-06'}

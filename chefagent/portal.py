@@ -10,6 +10,7 @@ from .kitchen_intake import understand
 from .guardrails import product_violations
 from .valio_api import ValioAPI
 from .catalog import load
+from .account_scope import account_id,account_name
 
 now = lambda: dt.datetime.now(k.TZ).isoformat()
 
@@ -211,6 +212,7 @@ def new_draft(services=None, source="Sanna Virtanen"):
     out = build(state)
     state["baseline_total"] = out["total"] if services is None else 0
     state["baseline_rows"] = copy.deepcopy(out["rows"])
+    out = build(state)
     Store().put("drafts/" + state["id"], state)
     out["draft_id"] = state["id"]
     index_draft(state, out)
@@ -579,7 +581,8 @@ def account():
     rule, _ = rules()
     book, _ = ledger()
     return {
-        "name": f.KITCHEN["name"],
+        "name": account_name(),
+        "account_id":account_id(),
         "team": f.TEAM,
         "rules": rule,
         "orders": book["orders"] + history()["orders"],
@@ -649,59 +652,7 @@ def prepare_assistant(text):
 
 
 def history():
-    cached, etag = Store().get("history")
-    if cached:
-        return cached
-    state = k.initial_state()
-    state["budget"] = 1500
-    out = build(state)
-    api = ValioAPI()
-    allids = list(dict.fromkeys(r["product_id"] for r in out["rows"]))
-    orders = []
-    for record in f.HISTORY:
-        prices = api.price(record["date"], allids)
-        lines = []
-        for r in out["rows"]:
-            pr = prices.get(r["product_id"], {})
-            if pr.get("unit_price") is None:
-                raise k.KitchenError("Could not price the account history from Valio.")
-            n = max(1, math.ceil(r["units"] * record["factor"]))
-            lines.append(
-                {
-                    **r,
-                    "units": n,
-                    "unit_price": pr["unit_price"],
-                    "total": round(n * pr["unit_price"], 2),
-                }
-            )
-        orders.append(
-            {
-                "order_number": record["id"],
-                "placed_by": record["by"],
-                "placed_at": record["date"] + "T15:00:00+02:00",
-                "total": round(sum(r["total"] for r in lines), 2),
-                "products": len(lines),
-                "deliveries": [
-                    {
-                        "date": record["date"],
-                        "rows": lines,
-                        "subtotal": round(sum(r["total"] for r in lines), 2),
-                        "cutoff": None,
-                    }
-                ],
-                "status": "Delivered",
-                "historical": True,
-                "price_checked_at": now(),
-                "rows": lines,
-            }
-        )
-    result = {
-        "orders": orders,
-        "calls": api.audit,
-        "note": "Authored Hotel Aurora past quantities, valued with real Valio customer prices. These are sample account records, not supplier invoices.",
-    }
-    try:
-        Store().put("history", result, etag)
-    except Conflict:
-        result, _ = Store().get("history")
-    return result
+    # Account history is explicitly imported through the real order flow by the
+    # maintenance script. Never generate past orders on a user's first page load.
+    cached, _ = Store().get("history")
+    return cached or {"orders": []}

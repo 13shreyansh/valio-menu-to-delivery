@@ -19,3 +19,5 @@ The demo account has no MCP authentication. Its connector can access only Hotel 
 Photo inputs, if needed for a separate recording, are at the unlinked /samples page. A photo must be uploaded and sent by the recorder. No request is prefilled and no event appears by itself.
 
 The headless acceptance flow is `npx playwright test`. It types the request, performs all approvals and the quantity edit, opens the receipt and settings, places the order, then runs the outside HTTPS MCP client and verifies the resulting account order. This does not verify a physical microphone or a real Claude connector chat. Record those two interactions only after checking them live.
+
+Automated acceptance runs use a fresh Aurora Test Kitchen via `x-valio-test-run`. The outside MCP test client uses the same run ID as its browser test. They never add orders or change rules in the public Hotel Aurora account. The normal connector address above still orders for Hotel Aurora.

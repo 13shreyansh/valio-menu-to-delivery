@@ -1,4 +1,6 @@
 import base64, json, queue, threading, time
+from contextvars import copy_context
+from .account_scope import account_id,account_name
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from . import portal as p, kitchen as k
@@ -10,7 +12,7 @@ router = APIRouter(prefix="/api")
 def signed_in(req: Request):
     try:
         auth = k.unseal(req.cookies.get("aurora_account", ""))
-        if auth.get("account") != "Hotel Aurora":
+        if auth.get("account_id","aurora")!=account_id():
             raise ValueError()
     except (ValueError, k.KitchenError):
         raise k.KitchenError("Sign in to Hotel Aurora to continue.")
@@ -25,10 +27,10 @@ def signed_in(req: Request):
 
 @router.post("/login")
 def login():
-    r = JSONResponse({"account": "Hotel Aurora"})
+    r = JSONResponse({"account": account_name()})
     r.set_cookie(
         "aurora_account",
-        k.seal({"created": time.time(), "account": "Hotel Aurora"}),
+        k.seal({"created": time.time(), "account": account_name(),"account_id":account_id()}),
         httponly=True,
         secure=True,
         samesite="lax",
@@ -178,7 +180,8 @@ async def ask(req: Request):
         finally:
             q.put(None)
 
-    threading.Thread(target=run, daemon=True).start()
+    context=copy_context()
+    threading.Thread(target=lambda:context.run(run), daemon=True).start()
 
     def stream():
         yield "data: " + json.dumps({"type": "start"}) + "\n\n"

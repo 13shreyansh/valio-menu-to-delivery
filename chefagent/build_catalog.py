@@ -7,7 +7,7 @@ Pack size (kg or L per sales unit) is estimated statically here from the name an
 GS1 unit conversions. At order time the agent prefers the authoritative figure
 derived from the price API (catalogPrice / comparisonPrice).
 """
-import csv, json, re, sys
+import csv, json, re, sys, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,12 +101,15 @@ def download_raw(raw_dir: Path):
     for path, name in [("/api/products/download", "products.json"),
                        ("/api/delivery-reliability/download", "reliability.csv"),
                        ("/api/carbon-footprint/download", "carbon.csv")]:
+        started = time.time()
         with httpx.stream("GET", base + path, headers=h, follow_redirects=True, timeout=120) as r:
             r.raise_for_status()
             with open(raw_dir / name, "wb") as f:
                 for chunk in r.iter_bytes(1 << 20):
                     f.write(chunk)
-            DOWNLOAD_AUDIT.append({"method":"GET","path":path,"status":r.status_code,"source":"Valio catalogue download"})
+            record={"method":"GET","path":path,"status":r.status_code,"source":"Valio catalogue download","at":started,"duration_ms":round((time.time()-started)*1000)}
+            if name == "products.json":record["product_count"]=len(json.loads((raw_dir/name).read_text()))
+            DOWNLOAD_AUDIT.append(record)
 
 
 def main(raw: Path = RAW, out: Path = ROOT / "data" / "catalog.json"):

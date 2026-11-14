@@ -1,6 +1,8 @@
 """Outside HTTPS MCP client. No browser cookies, account token or approval override."""
 
-import json, sys
+import json, sys, os, uuid
+TEST_RUN = os.environ.get("VALIO_TEST_RUN", uuid.uuid4().hex)
+assert len(TEST_RUN)==32 and all(c in "0123456789abcdef" for c in TEST_RUN)
 import httpx
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "https://valio-menu-to-delivery.vercel.app"
@@ -9,6 +11,7 @@ c = httpx.Client(
     timeout=240,
     follow_redirects=True,
     headers={
+        "x-valio-test-run": TEST_RUN,
         "Accept": "application/json, text/event-stream",
         "MCP-Protocol-Version": "2025-11-25",
     },
@@ -63,6 +66,7 @@ assert "Aurora Group assistant" in placed["message"]
 print(
     json.dumps(
         {
+            "test_kitchen": "test-"+TEST_RUN,
             "protocol": init["protocolVersion"],
             "tools": len(tools),
             "draft_id": p["draft_id"],

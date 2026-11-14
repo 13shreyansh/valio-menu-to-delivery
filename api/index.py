@@ -13,6 +13,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from chefagent.mcp_server import mcp
 from chefagent.portal_routes import router
 from chefagent.kitchen import KitchenError
+from chefagent.account_scope import KitchenScopeMiddleware
 
 mcp_app = mcp.streamable_http_app(
     streamable_http_path="/",
@@ -29,6 +30,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Valio Aimo", lifespan=lifespan)
+app.add_middleware(KitchenScopeMiddleware)
 app.mount("/mcp", mcp_app)
 app.include_router(router)
 # Retain signed photograph validation for existing data-layer clients.

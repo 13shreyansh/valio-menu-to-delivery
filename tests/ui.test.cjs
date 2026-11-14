@@ -106,7 +106,7 @@ test("approved and reopened rows show the actual approval state", () => {
   assert.ok(
     w.document
       .querySelector(".approved")
-      .textContent.includes("Approved by Sanna"),
+      .textContent.includes("approved by Sanna"),
   );
   assert.ok(
     w.document.body.textContent.includes(
@@ -131,7 +131,10 @@ test("receipt is readable without exposing credentials and has actual-call detai
   w.hooks.state.drawer = "receipt";
   w.hooks.render();
   assert.ok(w.document.querySelector(".receipt details"));
-  assert.ok(w.document.querySelector(".receipt").textContent.includes("27 ms"));
+  assert.equal(
+    JSON.parse(w.document.querySelector(".receipt pre").textContent).timing_ms,
+    27,
+  );
   assert.ok(
     !/API_KEY|password/.test(w.document.querySelector(".receipt").textContent),
   );
@@ -613,5 +616,82 @@ test("Recent orders never presents the placement date as a completed delivery", 
   const rows = w.document.querySelectorAll(".recent tbody tr");
   assert.equal(rows[0].children[2].textContent, "Not delivered");
   assert.equal(rows[1].children[2].textContent, "Fri 13 Nov");
+  dom.window.close();
+});
+
+test("approved decisions retain their distinct title and Undo", () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  for (const c of o.checks) {
+    c.approved = true;
+    c.approved_at = "23:15";
+  }
+  w.hooks.render();
+  const rows = [...w.document.querySelectorAll(".approval.approved")];
+  assert.ok(rows.some((r) => r.textContent.includes("Swap salmon for")));
+  assert.ok(rows.some((r) => r.textContent.includes("Buy cream as")));
+  assert.ok(rows.some((r) => r.textContent.includes("weekly limit")));
+  for (const r of rows) {
+    assert.match(r.textContent, /approved by Sanna · 23:15/);
+    assert.ok(r.querySelector("[data-action=unapprove]"));
+  }
+  dom.window.close();
+});
+
+test("receipt uses plain summaries; raw endpoint paths remain only inside Details", () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  o.evidence.calls = [
+    {
+      method: "GET",
+      path: "/api/products/download",
+      source: "Valio catalogue download",
+      product_count: 17546,
+      at: 1794690000,
+    },
+    {
+      method: "POST",
+      path: "/api/price",
+      product_ids: ["123"],
+      requested_date: "2026-11-20",
+    },
+    { method: "POST", path: "/api/availability", product_ids: ["123"] },
+  ];
+  w.hooks.state.drawer = "receipt";
+  w.hooks.render();
+  const receipt = w.document.querySelector(".receipt").cloneNode(true);
+  receipt.querySelectorAll("details").forEach((d) => d.remove());
+  assert.match(
+    receipt.textContent,
+    /Checked Valio's catalogue · 17,546 products/,
+  );
+  assert.match(receipt.textContent, /Checked prices at Valio/);
+  assert.match(receipt.textContent, /Checked stock at Valio/);
+  assert.doesNotMatch(receipt.textContent, /\/api\/|Not supplied|undefined/);
+  assert.match(
+    w.document.querySelector("details pre").textContent,
+    /\/api\/products\/download/,
+  );
+  dom.window.close();
+});
+
+test("delivered past order uses kitchen words when its cutoff was not recorded", () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  o.historical = true;
+  o.order_number = "AU-HISTORY";
+  o.placed_at = "2026-11-01T15:00:00+02:00";
+  for (const d of o.deliveries) d.cutoff = null;
+  w.hooks.state.readOrder = o;
+  w.hooks.render();
+  assert.match(
+    w.document.querySelector(".day-header").textContent,
+    /delivered/,
+  );
+  assert.match(
+    w.document.querySelector(".day-header").textContent,
+    /Order-by time was not recorded/,
+  );
+  assert.doesNotMatch(w.document.body.textContent, /not supplied/i);
   dom.window.close();
 });

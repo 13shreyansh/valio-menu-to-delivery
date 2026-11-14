@@ -64,12 +64,3 @@ RULES = {
     "changed_by": "Sanna",
     "version": 1,
 }
-# Historical account invoices contain product quantities, not invented prices.
-# Their totals are computed from the same customer price source, visibly dated.
-HISTORY = [
-    {"id": "AU-10481", "by": "Sanna Virtanen", "date": "2026-11-13", "factor": 1},
-    {"id": "AU-10480", "by": "Mikko Lahti", "date": "2026-11-09", "factor": 0.9},
-    {"id": "AU-10479", "by": "Sanna Virtanen", "date": "2026-11-06", "factor": 1.1},
-    {"id": "AU-10478", "by": "Mikko Lahti", "date": "2026-11-02", "factor": 0.85},
-    {"id": "AU-10477", "by": "Sanna Virtanen", "date": "2026-10-30", "factor": 1},
-]

@@ -1,10 +1,11 @@
+import uuid
 """Live acceptance over HTTP. Does not claim browser or microphone verification."""
 import base64, concurrent.futures, json, sys, time
 from pathlib import Path
 import httpx
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 BASE=sys.argv[1] if len(sys.argv)>1 else 'https://valio-menu-to-delivery.vercel.app'
-c=httpx.Client(base_url=BASE,timeout=240)
+c=httpx.Client(headers={"x-valio-test-run":uuid.uuid4().hex},base_url=BASE,timeout=240)
 def request(path,body=None):
  r=c.post('/api/sheet'+path,json=body) if body is not None else c.get('/api/sheet'+path)
  r.raise_for_status();return r.json()

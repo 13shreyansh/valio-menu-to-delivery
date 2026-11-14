@@ -3,7 +3,11 @@ const fs = require("node:fs");
 (async () => {
   const base = process.argv[2] || "https://valio-menu-to-delivery.vercel.app";
   const b = await chromium.launch({ headless: true });
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+  const kitchen = require("./test_kitchen.cjs")();
+  const ctx = await b.newContext({
+    extraHTTPHeaders: kitchen.headers,
+    viewport: { width: 1440, height: 900 },
+  });
   const p = await ctx.newPage();
   p.setDefaultTimeout(30000);
   const report = {};
@@ -161,11 +165,9 @@ const fs = require("node:fs");
       .locator(".sidebar")
       .getByRole("link", { name: "Invoices", exact: true })
       .click();
-    await p.getByRole("button", { name: "View", exact: true }).first().click();
-    await expect(
-      p.getByRole("dialog", { name: "Invoice", exact: true }),
-    ).toContainText("Sample account invoice");
-    report.invoice_view = "passed";
+    await expect(p.locator("main table")).toBeVisible();
+    await expect(p.locator("main")).toContainText("No orders in this view.");
+    report.isolated_invoices = "passed (new test kitchen has no past invoices)";
     console.log(JSON.stringify(report, null, 2));
   } catch (e) {
     report.error = e.message;

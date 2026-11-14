@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 import httpx
 from .kitchen import KitchenError
+from .account_scope import storage_namespace
 
 
 class Conflict(KitchenError):
@@ -14,7 +15,8 @@ class Conflict(KitchenError):
 
 
 class Store:
-    def __init__(self):
+    def __init__(self, namespace=None):
+        self.namespace=namespace or storage_namespace()
         self.token = os.environ.get("BLOB_READ_WRITE_TOKEN")
         if not self.token and os.environ.get("VERCEL"):
             raise KitchenError("Account storage is unavailable. Please try again.")
@@ -25,7 +27,7 @@ class Store:
 
     def url(self, key):
         sid = self.token.split("_")[3]
-        return f"https://{sid}.private.blob.vercel-storage.com/aurora/{key}.json"
+        return f"https://{sid}.private.blob.vercel-storage.com/{self.namespace}/{key}.json"
 
     def get(self, key):
         if self.token:
@@ -43,6 +45,7 @@ class Store:
                 return None, None
             r.raise_for_status()
             return r.json(), r.headers.get("etag")
+        key=self.namespace+"/"+key
         with sqlite3.connect(self.local) as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS docs (key TEXT PRIMARY KEY, body TEXT, version INTEGER)"
@@ -66,7 +69,7 @@ class Store:
                 h["x-if-match"] = version
             r = httpx.put(
                 "https://vercel.com/api/blob/",
-                params={"pathname": "aurora/" + key + ".json"},
+                params={"pathname": self.namespace+"/" + key + ".json"},
                 headers=h,
                 content=json.dumps(value),
                 timeout=30,
@@ -83,6 +86,7 @@ class Store:
                     + str(r.json().get("error", {}).get("message", r.status_code))
                 )
             return r.json().get("etag")
+        key=self.namespace+"/"+key
         with sqlite3.connect(self.local) as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS docs (key TEXT PRIMARY KEY, body TEXT, version INTEGER)"

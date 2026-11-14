@@ -14,7 +14,9 @@ const fs = require("node:fs");
         path.resolve("tests/fixtures/wedding-test.wav"),
     ],
   });
+  const kitchen = require("./test_kitchen.cjs")();
   const ctx = await b.newContext({
+    extraHTTPHeaders: kitchen.headers,
     viewport: { width: 1440, height: 900 },
     permissions: ["microphone"],
   });
