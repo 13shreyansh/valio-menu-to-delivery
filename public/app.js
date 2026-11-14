@@ -86,14 +86,16 @@ async function api(path, body) {
   return data;
 }
 async function task(fn) {
-  if (S.busy) return;
+  if (S.busy) return false;
   S.busy = true;
   S.error = "";
   render();
   try {
     await fn();
+    return true;
   } catch (e) {
     S.error = e.message;
+    return false;
   } finally {
     S.busy = false;
     render();
@@ -610,7 +612,7 @@ async function loadCatalogue(q = "") {
   }
 }
 async function mutate(action, value) {
-  await task(async () => {
+  return await task(async () => {
     S.order = await api("/drafts/" + S.order.draft_id + "/change", {
       action,
       value,
@@ -1066,8 +1068,8 @@ document.addEventListener("click", async (e) => {
       S.order = await api("/drafts", {});
       localStorage.setItem("aurora-draft", S.order.draft_id);
     }
-    await mutate("add", value);
-    S.notice = "Added to next week’s order.";
+    const added = await mutate("add", value);
+    if (added) S.notice = "Added to next week’s order.";
     render();
     return;
   }

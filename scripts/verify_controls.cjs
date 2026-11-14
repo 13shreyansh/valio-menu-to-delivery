@@ -70,6 +70,20 @@ const fs = require("node:fs");
       Accept: "application/json, text/event-stream",
       "MCP-Protocol-Version": "2025-11-25",
     };
+    const initialize = await ctx.request.post(base + "/mcp/", {
+      headers,
+      data: {
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "ordering-rule-verification", version: "1" },
+        },
+      },
+    });
+    expect(initialize.status()).toBe(200);
     const rpc = async (name, args) => {
       const r = await ctx.request.post(base + "/mcp/", {
         headers,

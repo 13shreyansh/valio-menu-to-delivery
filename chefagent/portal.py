@@ -341,18 +341,9 @@ def apply_request(
         state["calls"].append(general["call"])
     else:
         reading = understand(text=text, media=media, source=source)
-        state["calls"].append(
-            {
-                "source": "Gemini",
-                "method": "POST",
-                "purpose": source + " understanding",
-                "status": 200,
-                "at": start,
-                "duration_ms": round((time.time() - start) * 1000),
-                "request": {"media_type": media.get("mime") if media else None},
-                "response": reading,
-            }
-        )
+        call = reading.pop("_call", None)
+        if call:
+            state["calls"].append(call)
     if progress:
         progress("read", reading)
     if reading["status"] != "readable":

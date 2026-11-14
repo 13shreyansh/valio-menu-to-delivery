@@ -59,3 +59,21 @@ def test_bare_weekday_uses_ordering_week_and_does_not_reject_today():
 def test_explicit_date_outside_connected_week_is_not_forced_to_saturday():
     r=validate_reading({'status':'readable','transcript':'Wedding next month 40 salmon','date':'2026-12-05','covers':40,'dishes':[{'recipe':'salmon','covers':40}]},'text')
     assert r['status']!='readable'
+
+def test_empty_text_caption_does_not_reject_a_photo_before_the_real_model_call(monkeypatch):
+    import base64,json
+    from chefagent import kitchen_intake as intake
+    monkeypatch.setenv('GEMINI_API_KEY','unit-test-only')
+    calls=[]
+    class Reply:
+        status_code=200
+        def raise_for_status(self):pass
+        def json(self):return {'candidates':[{'content':{'parts':[{'text':json.dumps({'status':'readable','transcript':'Saturday wedding120 whitefish','date':'2026-11-21','event':'Wedding','covers':120,'dishes':[{'recipe':'whitefish','covers':120}],'read':[],'uncertain':[],'reason':''})}]}}]}
+    def post(*args,**kwargs):calls.append(kwargs['json']);return Reply()
+    monkeypatch.setattr(intake.httpx,'post',post)
+    reading=intake.understand(text='',media={'mime':'image/jpeg','data':base64.b64encode(b'test-photo-bytes').decode()},source='photo')
+    assert len(calls)==1 and reading['status']=='readable'
+    assert any('inlineData' in part for part in calls[0]['contents'][0]['parts'])
+    assert reading['_call']['source']=='Gemini' and reading['_call']['status']==200
+    blank=intake.understand(text='')
+    assert '_call' not in blank and len(calls)==1

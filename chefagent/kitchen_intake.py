@@ -1,7 +1,7 @@
 """Gemini text, audio and photograph interpretation, followed by strict validation.
 Photographs are proposals only. Unreadable/uncertain input cannot mutate an order.
 """
-import base64, json, os
+import base64, copy, json, os, time
 import httpx
 from .llm import MODEL
 from .kitchen_fixtures import RECIPES
@@ -57,7 +57,7 @@ def validate_reading(raw, source):
     return result
 
 def understand(text=None, media=None, source='text'):
-    if text is not None and (not text.strip() or len(text)>4000):
+    if not media and text is not None and (not text.strip() or len(text)>4000):
         return validate_reading({},source)
     parts=[]
     if text: parts.append({'text':text})
@@ -74,11 +74,14 @@ def understand(text=None, media=None, source='text'):
     if not key: raise KitchenError('Tell Valio is unavailable. Your order has not changed. Please try again shortly.')
     body={'systemInstruction':{'parts':[{'text':SYSTEM}]},'contents':[{'role':'user','parts':parts}],
           'generationConfig':{'responseMimeType':'application/json','responseSchema':READING_SCHEMA,'temperature':0,'thinkingConfig':{'thinkingLevel':'low'}}}
+    started=time.time()
     try:
         r=httpx.post(f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent',
                      headers={'x-goog-api-key':key},json=body,timeout=90)
         r.raise_for_status();data=r.json()
         content=''.join(p.get('text','') for p in data['candidates'][0]['content']['parts'] if not p.get('thought'))
-        return validate_reading(json.loads(content),source)
+        reading=validate_reading(json.loads(content),source)
+        reading['_call']={'method':'POST','source':'Gemini','purpose':source+' understanding','status':r.status_code,'at':started,'duration_ms':round((time.time()-started)*1000),'request':{'text':text,'media_type':media.get('mime') if media else None},'response':copy.deepcopy(reading)}
+        return reading
     except (httpx.HTTPError,KeyError,ValueError):
         raise KitchenError("Didn't catch that. Your order has not changed. Try again, or type it.") from None

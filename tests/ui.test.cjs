@@ -541,3 +541,35 @@ test("an automatic recorder stop clears Listening and completes the transcript",
   assert.equal(w.hooks.state.input, "Breakfast for40 Wednesday");
   dom.window.close();
 });
+test("a rejected catalogue addition never displays a success notice", async () => {
+  const { dom, w } = setup();
+  account(w);
+  Object.assign(w.hooks.state, {
+    path: "/catalogue",
+    catalogueLoaded: true,
+    catalogue: [
+      {
+        id: "X",
+        name: "Product",
+        pack: 1,
+        pack_dim: "l",
+        unit_price: 1,
+        comparison_price: 1,
+        availability: { available_date: "2026-11-20" },
+        allowed: true,
+      },
+    ],
+  });
+  w.fetch = async () => ({
+    ok: false,
+    json: async () => ({ error: "Not enough stock" }),
+  });
+  w.hooks.render();
+  w.document.querySelector("[data-action=add]").click();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  assert.ok(
+    w.document.querySelector(".error").textContent.includes("Not enough stock"),
+  );
+  assert.equal(w.document.querySelector(".status-note"), null);
+  dom.window.close();
+});
