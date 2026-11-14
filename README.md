@@ -1,62 +1,56 @@
-# Valio Aimo · The Kitchen Sheet
+# Valio Aimo kitchen ordering portal
 
 Live: https://valio-menu-to-delivery.vercel.app
 
-A hotel chef's weekly order arrives already written. The Kitchen Sheet expands recipes into grams per cover, deducts kitchen stock, rounds to Valio sales units, and checks customer prices, availability and cut-offs. Tell Valio reads a typed or spoken wedding request through Gemini. A photograph of the final menu becomes an editable proposal before it changes the order.
+Hotel Aurora's weekly order is computed from its recipes, bookings and current stock. Valio supplies real customer prices, stock, available dates, pack comparisons and cut-offs. Ask Valio interprets typed requests, microphone recordings and photographs through Gemini. The chef reviews the actual supply, pack and spend decisions before placing an order.
 
-The authored demo kitchen has menus, recipes, bookings, stock, handling rules and a chef-set weekly budget. Those fixtures are labelled in “Your kitchen, connected” and the decision receipt. Prices, supply, pack confirmation and cut-offs come from the sponsor API. Finnish catalogue names are preserved.
+The remote MCP server uses the same engine and account rules. Outside assistants can find products, check prices and stock, prepare orders and place orders within their authority. Confirmation stores the order in the private account ledger. The sponsor has no order API, so nothing ships.
 
-“Place order” is a demo confirmation. Nothing ships: the Junction API has no order endpoint. Confirmation and the technical receipt say this explicitly.
+## Run
 
-## Run locally
+Use process environment variables `VALIO_API_KEY`, `GEMINI_API_KEY`, and `BLOB_READ_WRITE_TOKEN`. Never write credentials into the repository. Vercel already has the entry's credentials and private Blob store connected.
 
-Set `VALIO_API_KEY` and `GEMINI_API_KEY` in the process environment through your secret manager. Do not write credentials to files. Optional `KITCHEN_SIGNING_KEY` separates sheet signing from the API credential. Optional `CHEF_MODEL` selects the Gemini model, defaulting to the model already configured by the data layer.
-
-```sh
+```
 uv venv .venv
 uv pip install --python .venv/bin/python -r requirements-dev.txt
 npm ci
 .venv/bin/python -m uvicorn api.index:app --port 8077
 ```
 
-The catalogue is downloaded from Valio on a cold start and remains untracked. Vercel downloads it into temporary storage. Quote cache entries include customer identity, expire after 120 seconds, and are bypassed when placing the demo order. Server-signed sheet state expires after four hours, allowing stateless Vercel execution.
+Without Blob credentials, local development uses SQLite at `/tmp/valio-aurora.sqlite`. Vercel refuses to fall back to temporary storage. Private Blob documents use conditional ETag writes to prevent lost updates. Draft IDs are random and orders are idempotent by draft ID. Each confirmed order retains its exact prices and receipt.
+
+The demo-account sign-in uses an expiring, HttpOnly, same-site cookie. The MCP endpoint is deliberately public and scoped only to this synthetic account. It accepts no arbitrary customer identifier, chef identity or caller-supplied approval. Do not use this public demo connector for a production kitchen.
 
 ## Quality commands
 
-```sh
+```
 .venv/bin/python -m pytest -q
 npm test
 npm run check
-.venv/bin/python scripts/verify_live.py
+npx playwright test
+.venv/bin/python scripts/mcp_client.py https://valio-menu-to-delivery.vercel.app
 ```
 
-The Python suite uses an explicitly synthetic supplier to test the hand-built expected product/pack order, weekly budget locking, quantity and price invalidation, allergen safety, passed cut-offs, cache isolation and unreadable photographs. No test price is served in the product.
+The Python supplier fixtures and JSDOM fixtures are synthetic test data and are never served by the product. The Playwright test uses the deployed URL and actual Valio/Gemini responses. `BASE_URL` may override it for local verification. Screenshots, console reports and measured MCP results go to `artifacts/e2e/`.
 
-`npm test` generates its own synthetic sheet fixture and runs DOM interactions in JSDOM. This is not a browser layout or microphone test.
+`portal.py` enforces current weekly-order limits, swap approval, allergen restrictions and larger-change thresholds for every web and MCP mutation. Approval fingerprints bind current rules, products, pack quantities and prices. A quantity edit reopens affected approvals; fresh quotes at commitment invalidate changed prices. A “Don't allow” limit, missing supply, past cut-off or recipe shortage cannot be approved away.
 
-`verify_live.py` uses the deployed app, actual Valio responses and actual Gemini understanding. It checks the expected wedding order, budget lock, three positive and two negative handwritten-style whiteboard fixtures, final demo confirmation and MCP. It writes the measured report to `artifacts/live-verification.json`. On first recording, its verified readings for “Play the story” go to `public/story-readings.json`; prices and approvals are still computed normally during playback.
+The weekly limit applies to each weekly order, matching the setting's “When an order goes over” language. It is not a cumulative account spending cap. The monthly account summary includes all stored confirmations. A cumulative cap would block the spec's subsequent outside-assistant order after the chef approves an over-limit wedding order, so this interpretation is recorded in the spec gaps.
 
-Real browser acceptance at 1440 × 900, 1024 × 768 and 390 px, console checks and microphone capture must be checked through Codex's inbuilt browser. The present environment reports its browser host unavailable; no substitute personal or external browser has been used.
+## Data provenance and spec gaps
 
-## Ordering controls
+Hotel Aurora's menus, guest counts, stock, recipes, team and historical quantities are authored sample account records. Historical account totals are computed from those quantities and actual Valio customer prices, checked at account initialization. They are sample invoices, not supplier invoices. Kitchen profile and invoice details state this.
 
-- Recipe substitutions preserve cooking method, fish weight and allergens, and need the chef's OK. The frozen trout fillet is portioned in the kitchen before poaching.
-- Larger cream packs are proposed only when their quoted price per litre is lower and booked demand supports the kitchen's 48-hour opened-pack rule. The story uses all 14 l by Sunday breakfast.
-- Weekly spend approval binds the entire order, including every product, amount and price. Editing a checked product reopens its check. A fresh quote at commitment invalidates stale approvals.
-- Allergen violations, unavailable supply, passed cut-offs, insufficient stock and recipe shortages cannot be approved away.
-- Unreadable photographs leave the order unchanged. An uncertain but partly legible menu requires in-place correction and explicit confirmation; a blank/garbled result cannot be relabelled as readable.
+The Valio availability API supplies available dates and supplier cut-offs, but no arrival times. The portal says “Arrival time to confirm” rather than inventing 07:00. Requested delivery days are the account's connected schedule. A product is accepted only if Valio confirms availability by that day and its cut-off has not passed.
+
+The actual wedding supply decision currently concerns unavailable salmon and an available recipe-safe trout fillet. The actual cheaper cream pack is 1.75 L. The spec's whitefish, pike-perch and 10 L examples are not fabricated when the live data differs.
+
+The built-in browser host was unavailable during implementation. The explicitly requested Playwright acceptance uses headless Chromium. Physical microphone use and the real Claude custom-connector recording remain separate manual checks.
 
 ## MCP
 
 Streamable HTTP: https://valio-menu-to-delivery.vercel.app/mcp/
 
-The original tools remain available: `request_order`, `plan_menu_order`, `search_products`, `get_product`, `quote`, `find_substitutes`, `submit_order`. The legacy `submit_order` also returns an explicitly labelled mock confirmation. Tools use customer-specific prices and catalogue rules.
+Tools: `find_products`, `check_stock_and_prices`, `prepare_order`, `place_order`.
 
-## Main files
-
-- `chefagent/kitchen_fixtures.py`: kitchen, recipes, stock, catalogue shortlist and bookings.
-- `chefagent/kitchen.py`: quantities, pack selection, guardrails, signed state, approvals and commitment.
-- `chefagent/kitchen_intake.py`: Gemini multimodal understanding and deterministic validation.
-- `chefagent/kitchen_routes.py`: sheet, speech, photo and story HTTP routes.
-- `public/`: self-hosted font, Kitchen Sheet UI, handwritten-style whiteboards and recorded story readings.
-- `tests/test_wedding.py`: independently authored golden product IDs and sales-unit counts.
+The outside client script initializes MCP, lists tools, quotes a product, prepares “breakfast for 40 for Wednesday”, and places the returned draft. It uses HTTPS and no browser cookies or approval overrides. The browser acceptance verifies its resulting order in Orders, Recent orders and the bell.

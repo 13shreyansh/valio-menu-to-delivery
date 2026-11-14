@@ -1,23 +1,21 @@
-# The two-minute wedding story
+# Valio Aimo recording, two minutes
 
-Open https://valio-menu-to-delivery.vercel.app and choose “Play the story”. The recording uses a verified Gemini reading to keep pacing repeatable. Every order calculation, Valio quote, approval and fresh commitment check still runs. “Stop story” hands control back to the chef and discards any late response from that run.
+Use https://valio-menu-to-delivery.vercel.app in a fresh browser session. All steps below are real actions. Do not speed through unfinished lookups or add cards in editing. Prices, products and totals may change. Read the current screen rather than quoting the example figures from the design spec.
 
-Start at the ready weekly order. Explain one working line: recipe covers × grams per cover, minus usable kitchen stock, rounded to the real sales unit. Tap to expand the dish allocations and customer price.
+| Time | Action and narration |
+| --- | --- |
+| 0:00–0:12 | Kitchen still. “Sanna runs Hotel Aurora's kitchen. Her menu and bookings are already connected. A Saturday wedding just landed, with 120 guests.” |
+| 0:12–0:27 | Click “Try the demo account (Hotel Aurora)”. Show the dashboard's already prepared weekly order, deliveries and budget. “Valio has prepared the routine week from her recipes, bookings and stock.” |
+| 0:27–0:52 | Click Ask Valio. Tap the microphone, speak “Wedding on Saturday, 120 guests. Salmon soup, whitefish with potatoes, lemon tart.” Tap again to stop. Check the real transcript and click Send. Typed fallback: enter the same words and click Send. Let the real checklist finish. Close Ask Valio. “She says dishes and guests. Valio checks the ingredients, supply, packs, allergens and budget.” |
+| 0:52–1:25 | Click Review order. Show the three actual decisions. Approve each. Increase Friday cream by one pack with +. Show the reopened pack and budget approvals, then approve them again. Open Why? on that product, then close it. Open How this was decided, expand a real call's Details, then close it. Open Settings → Ordering rules. Return through Dashboard → Review order. Click Place order. Show the confirmation, including its small demo-account notice. |
+| 1:25–1:50 | In a real Claude chat with the custom connector already added, ask “Order breakfast for 40 for Hotel Aurora's Wednesday conference.” Let Claude call the real MCP tools and return the order number. Back in the portal, open Orders and show that exact number, “Placed by Aurora Group assistant” and “Within your rules”. Do not replace this clip with a simulated chat. |
+| 1:50–2:00 | Return to Dashboard. End narration: “Your kitchen plans. Valio orders.” |
 
-Tell Valio: “Wedding Saturday, 120 guests, salmon and lemon tart.” Use the keyboard button, or hold the microphone and release to send. Gemini reads the request; code calculates every quantity. The sheet grows and the budget passes its limit.
+The exact MCP address and setup steps are in Settings → Connected assistants:
+https://valio-menu-to-delivery.vercel.app/mcp/
 
-Check the three proposals:
+The demo account has no MCP authentication. Its connector can access only Hotel Aurora's synthetic account. It cannot impersonate a chef approval. The sponsor supplies no order API; Place order stores a confirmation in our app.
 
-1. Salmon has no confirmed delivery in time. The proposed frozen raw trout fillet has a valid cut-off. Thaw chilled, cut into the recipe's 150 g portions, then poach. The same fish allergen is declared; no new allergens enter the kitchen.
-2. The real customer price per litre is lower for 1.75 l cream than for 1 l cream. Eight packs provide 14 l. Booked Friday soup, wedding main and tart, and Sunday staff breakfast use that amount within the kitchen handling window.
-3. The wedding puts the whole week's order over the chef's weekly budget. “OK this week” approves only the current products, quantities and prices.
+Photo inputs, if needed for a separate recording, are at the unlinked /samples page. A photo must be uploaded and sent by the recorder. No request is prefilled and no event appears by itself.
 
-Approve each. Add one cream pack with “+”. Its pack check and weekly budget check reopen, and placing locks. Approve the changed order.
-
-Photograph the final menu, or use `public/whiteboards/menu-1.jpg`. Review the photo beside “What we read”. Whitefish replaces the wedding salmon, lemon tart remains, and the cheese board has 140 portions. Correct portions in place, then choose “Update order”. The old wedding fish row is marked Removed. Ordinary weekly soup remains unchanged.
-
-Check the new budget. Place the order. The sheet becomes a confirmation with an order number, delivery subtotals and total against the budget. The demo account notice says nothing ships.
-
-Open “How this was decided” to show the chef's words, photo reading, rules, choices and timestamped OKs. Expand Technical receipt, then the supplier call record for every recorded API call. The MCP door remains available for buyers who bring their own ordering agent.
-
-Do not claim a real commercial order was placed, a supplier cut-off was invented, or microphone/browser acceptance passed without the real browser check.
+The headless acceptance flow is `npx playwright test`. It types the request, performs all approvals and the quantity edit, opens the receipt and settings, places the order, then runs the outside HTTPS MCP client and verifies the resulting account order. This does not verify a physical microphone or a real Claude connector chat. Record those two interactions only after checking them live.

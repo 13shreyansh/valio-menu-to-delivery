@@ -48,3 +48,14 @@ def test_late_photo_receipt_merges_into_latest_sheet_without_old_approvals(weddi
     state=sheet_state({'token':k.seal(wedding_state),'photo_receipts':[receipt,receipt]})
     assert state['budget']==1234 and not state['approvals']
     assert state['calls']==[call]
+
+def test_bare_weekday_uses_ordering_week_and_does_not_reject_today():
+    from chefagent.kitchen_intake import SYSTEM
+    assert 'Saturday means 21 November 2026' in SYSTEM
+    assert 'never today' in SYSTEM
+    r=validate_reading({'status':'readable','transcript':'Conference Wednesday 40 breakfast','date':'2026-11-18','event':'Conference','covers':40,'dishes':[{'recipe':'breakfast','covers':40}]},'text')
+    assert r['status']=='readable' and r['date']=='2026-11-18'
+
+def test_explicit_date_outside_connected_week_is_not_forced_to_saturday():
+    r=validate_reading({'status':'readable','transcript':'Wedding next month 40 salmon','date':'2026-12-05','covers':40,'dishes':[{'recipe':'salmon','covers':40}]},'text')
+    assert r['status']!='readable'

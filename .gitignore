@@ -18,3 +18,6 @@ artifacts/*-local.json
 artifacts/font-source/
 
 artifacts/*.wav
+
+artifacts/e2e/
+artifacts/*.tgz

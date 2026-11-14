@@ -43,8 +43,8 @@ def initial_state():
     return {'created': time.time(), 'wedding': None, 'budget': KITCHEN['budget'], 'overrides': {},
             'approvals': {}, 'events': [], 'calls': [], 'extra': []}
 
-def services_for(state):
-    services = copy.deepcopy(BASE_SERVICES)
+def services_for(state, context=None):
+    services = copy.deepcopy(state.get("services_override", context.BASE_SERVICES if context else BASE_SERVICES))
     w = state.get('wedding')
     if w:
         for dish in w['dishes']:
@@ -75,26 +75,36 @@ def cutoff_passed(value):
     try: return dt.datetime.fromisoformat(value.replace('Z', '+00:00')) <= dt.datetime.now(TZ)
     except (ValueError, TypeError): return True
 
-def build(state, fresh=False):
+def build(state, fresh=False, context=None, progress=None):
+    KITCHEN, INGREDIENTS, STOCK, RECIPES, BASE_SERVICES, DELIVERIES = (
+        (context.KITCHEN, context.INGREDIENTS, context.STOCK, context.RECIPES, context.BASE_SERVICES, context.DELIVERIES) if context else
+        (globals()["KITCHEN"], globals()["INGREDIENTS"], globals()["STOCK"], globals()["RECIPES"], globals()["BASE_SERVICES"], globals()["DELIVERIES"]))
+    delivery_for = lambda date: max(d for d in DELIVERIES if d <= date)
     from . import build_catalog
     downloaded_before=len(build_catalog.DOWNLOAD_AUDIT)
     cat, api = load(), ValioAPI(customer=KITCHEN['customer'], fresh=fresh)
     api.audit.extend(build_catalog.DOWNLOAD_AUDIT[downloaded_before:])
     allocations = defaultdict(list)
-    for s in services_for(state):
+    for s in services_for(state, context):
         recipe = RECIPES[s['recipe']]
         for role, grams in recipe['ingredients'].items():
             allocations[(delivery_for(s['date']), role)].append({
                 'dish': recipe['name'], 'date': s['date'], 'covers': s['covers'],
                 'per_cover': grams, 'amount': round(s['covers']*grams/1000, 6),
                 'wedding': s.get('wedding', False)})
+    if progress: progress('scaled', {'covers':sum(x['covers'] for x in (state.get('wedding') or {}).get('dishes',[]))})
+    quoted={}
+    for day in DELIVERIES:
+        ids=list(dict.fromkeys(pid for (d,role) in allocations if d==day for pid in INGREDIENTS[role]['ids']))
+        if ids: quoted[day]=(api.price(day,ids),api.availability(day,ids))
+    if progress: progress('stock', quoted)
     remaining = copy.deepcopy(STOCK)
     rows, checks, reasons = [], [], []
     cream_rows, swaps = [], []
     for day in DELIVERIES:
         roles = [r for (d,r) in allocations if d == day]
         ids = list(dict.fromkeys(pid for role in roles for pid in INGREDIENTS[role]['ids']))
-        prices, avails = api.price(day, ids), api.availability(day, ids)
+        prices, avails = quoted.get(day, ({},{}))
         for role in roles:
             parts = allocations[(day,role)]
             gross = round(sum(p['amount'] for p in parts), 6)
@@ -195,12 +205,12 @@ def build(state, fresh=False):
         old=previous.get(row['id'])
         if not old:
             if row.get('change') != 'Swapped' and previous:
-                row['change']='Added';row['change_reason']='for the new wedding menu' if state.get('wedding',{}).get('from_photo') else 'for Saturday wedding'
+                row['change']='Added';row['change_reason']='for the new wedding menu' if (state.get('wedding') or {}).get('from_photo') else 'for Saturday wedding'
         elif row['product_id'] != old['product_id']:
             row['change']='Swapped';row['change_reason']='was '+old['name']
         elif row['units'] != old['units']:
             row['change']='More' if row['units']>old['units'] else 'Less'
-            row['change_reason']='for the new wedding menu' if state.get('wedding',{}).get('from_photo') else 'for Saturday wedding'
+            row['change_reason']='for the new wedding menu' if (state.get('wedding') or {}).get('from_photo') else 'for Saturday wedding'
         elif previous:
             row['change']=None
     for rid,old in previous.items():
@@ -219,6 +229,7 @@ def build(state, fresh=False):
         checks.append({'id':'pack','kind':'pack','text':f'{first["name"]}: €{first["pack_saving_per_l"]:.2f} less per litre than 1 l. Buy {first["units"]} × {first["pack"]:g} l for {first["need"]:g} l of booked recipes.',
                        'button':'OK, larger pack','alternative':'Keep 1 l','row_ids':[r['id'] for r in cream_rows], 'can_approve':True,
                        'proof':'Kitchen rule: opened cream used within 48 h. The pack is smaller than the booked demand in that window.'})
+    if progress: progress('packs', {'rows':rows,'checks':checks})
     total = round(sum(r['total'] for r in rows),2)
     if total>state['budget']:
         checks.append({'id':'budget','kind':'budget','text':f'This order is €{total-state["budget"]:.2f} over your weekly budget of €{state["budget"]:,.2f}.',
@@ -244,7 +255,7 @@ def build(state, fresh=False):
     state['calls']=(state.get('calls',[])+api.audit)[-300:]
     return {'rows':rows,'deliveries':deliveries,'total':total,'budget':state['budget'],'checks':checks,
             'pending':sum(not c['approved'] for c in checks),'can_place':all(c['approved'] for c in checks),
-            'kitchen':KITCHEN,'stock':STOCK,'recipes':RECIPES,'services':services_for(state),
+            'kitchen':KITCHEN,'stock':STOCK,'recipes':RECIPES,'services':services_for(state, context),
             'wedding':state.get('wedding'),'quote_at':dt.datetime.now(TZ).isoformat(),
             'evidence':{'calls':state['calls'],'decisions':reasons,'events':state['events'],'guardrails':KITCHEN['rules'],
                         'fixture_note':KITCHEN['fixture_note'],'price_note':'Customer HC-1001 prices, excluding VAT. Final ordering is a demo confirmation; Valio provides no order endpoint.'}}

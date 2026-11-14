@@ -71,6 +71,7 @@ class ValioAPI:
                 chunk = missing[i:i + 200]
                 for attempt in range(4):
                     try:
+                        started=time.time()
                         r = httpx.post(BASE + path, headers={"X-API-Key": KEY},
                                        json={"customer": self.customer, "requestedDate": date, "products": chunk}, timeout=30)
                         if r.status_code == 429:
@@ -82,7 +83,9 @@ class ValioAPI:
                 self.calls += 1
                 self.audit.append({'method': 'POST', 'path': path, 'customer': self.customer,
                                    'requested_date': date, 'product_ids': chunk,
-                                   'status': r.status_code, 'at': time.time(), 'source': 'Valio API'})
+                                   'status': r.status_code, 'at': time.time(), 'source': 'Valio API',
+                                   'duration_ms':round((time.time()-started)*1000),
+                                   'request':{'customer':self.customer,'requestedDate':date,'products':chunk},'response':r.json()})
                 for row in r.json()["products"]:
                     out[row["productId"]] = row
                     self._cache[f"{self.customer}|{path}|{date}|{row['productId']}"] = {'at': time.time(), 'row': row}

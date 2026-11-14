@@ -1,352 +1,167 @@
-// These tests execute DOM interactions in JSDOM. They do not assert browser layout or microphone quality.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
+const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
-const fixture = JSON.parse(fs.readFileSync("artifacts/ui-local.json", "utf8"));
-const script = fs.readFileSync("public/app.js", "utf8");
-const html = fs.readFileSync("public/index.html", "utf8");
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-async function setup(handler) {
+const f = JSON.parse(fs.readFileSync("artifacts/ui-local.json"));
+const code = fs.readFileSync("public/app.js", "utf8");
+function setup() {
   const errors = [];
   const vc = new VirtualConsole();
-  vc.on("jsdomError", (e) => errors.push(e));
-  const dom = new JSDOM(html, {
+  vc.on("jsdomError", (e) => errors.push(e.message));
+  const dom = new JSDOM(fs.readFileSync("public/index.html", "utf8"), {
     url: "https://valio-menu-to-delivery.vercel.app",
     runScripts: "outside-only",
     pretendToBeVisual: true,
     virtualConsole: vc,
   });
   const w = dom.window;
-  w.matchMedia = () => ({ matches: true });
-  w.HTMLElement.prototype.scrollIntoView = () => {};
-  w.structuredClone = structuredClone;
-  w.fetch = async (url, opts) => ({
-    ok: true,
-    json: async () =>
-      handler
-        ? await handler(url, opts?.body ? JSON.parse(opts.body) : null)
-        : structuredClone(fixture.initial),
-  });
+  w.scrollTo = () => {};
+  w.matchMedia = () => ({ matches: false });
+  w.fetch = async () => ({ ok: true, json: async () => ({}) });
   w.eval(
-    script +
-      `;window.testHooks={render,showDecisions,setPhoto:(value,src)=>{photo=value;photoSrc=src;renderPhoto();}};`,
+    code + `;window.hooks={render,state:S,esc,orderPage,start,rulesView};`,
   );
-  await wait(10);
-  return { w, dom, errors };
+  return { dom, w, errors };
 }
-function assertWorking(w) {
-  for (const row of w.document.querySelectorAll(".order-row")) {
-    const qty = row.querySelector(".qty").textContent;
-    const end = row.querySelector(".working b").textContent;
-    assert.ok(end.startsWith(qty + " ×"), `${qty} != ${end}`);
-  }
-}
-test("loads directly to a real sheet and every displayed quantity ends its working", async () => {
-  const { w, dom, errors } = await setup();
-  try {
-    assert.equal(
-      w.document.querySelector("h1").textContent,
-      "Next week's order is ready",
-    );
-    assert.equal(
-      w.document.querySelectorAll(".order-row").length,
-      fixture.initial.rows.length,
-    );
-    assert.equal(w.document.querySelector("#place").textContent, "Place order");
-    assertWorking(w);
-    assert.deepEqual(errors, []);
-  } finally {
-    dom.window.close();
-  }
-});
-test("typed wedding updates the sheet and locks Place order for the checks", async () => {
-  let calls = [];
-  const { w, dom, errors } = await setup((url, body) => {
-    calls.push([url, body]);
-    return url.endsWith("/tell")
-      ? {
-          ...fixture.wedding,
-          reading: {
-            status: "readable",
-            transcript: "Wedding Saturday, 120 guests, salmon and lemon tart",
-          },
-        }
-      : fixture.initial;
+const rules = {
+  weekly_limit: 800,
+  growth_limit: 200,
+  over_limit: "ask",
+  ask_swap: true,
+  same_allergens: true,
+  allergens: ["nuts", "peanuts"],
+  monthly_limit: 6000,
+  changed_by: "Sanna",
+  changed_at: "2026-11-02",
+};
+function account(w) {
+  const o = structuredClone(f.wedding);
+  o.draft_id = "1".repeat(32);
+  o.rules = rules;
+  o.status = "draft";
+  o.baseline_total = f.initial.total;
+  o.request = "Wedding Saturday 120 guests";
+  o.reading = {
+    covers: 120,
+    dishes: [{ recipe: "salmon" }, { recipe: "tart" }],
+  };
+  const s = w.hooks.state;
+  Object.assign(s, {
+    order: o,
+    account: {
+      rules,
+      team: [],
+      bookings: o.kitchen.bookings,
+      recipes: o.recipes,
+      stock: o.stock,
+      orders: [],
+      events: [],
+    },
+    path: "/orders/week-47",
   });
-  try {
-    w.document.querySelector("#keyboard").click();
-    w.document.querySelector("#tell-text").value =
-      "Wedding Saturday, 120 guests, salmon and lemon tart";
-    w.document
-      .querySelector("#tell-form")
-      .dispatchEvent(new w.Event("submit", { cancelable: true }));
-    await wait(20);
-    assert.equal(
-      w.document.querySelector("#place").textContent,
-      "3 things to check first",
-    );
-    assert.equal(w.document.querySelectorAll("[data-approve]").length, 3);
-    assertWorking(w);
-    assert.deepEqual(errors, []);
-  } finally {
-    dom.window.close();
-  }
-});
-test("one cream increment reopens pack and weekly budget approval", async () => {
-  const { w, dom } = await setup((url, body) =>
-    url.endsWith("/change") ? fixture.reopened : fixture.initial,
+  return o;
+}
+test("signed-out screen has no password or story controls", () => {
+  const { dom, w } = setup();
+  assert.equal(w.document.querySelectorAll("[type=password]").length, 0);
+  assert.ok(
+    w.document.body.textContent.includes("Try the demo account (Hotel Aurora)"),
   );
-  try {
-    w.testHooks.render(fixture.approved);
+  assert.ok(!/Play the story|Stop story/.test(w.document.body.textContent));
+  dom.window.close();
+});
+test("untrusted request and catalogue names are escaped", () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.drawer = "ask";
+  w.hooks.state.request = "<img src=x onerror=alert(1)>";
+  w.hooks.render();
+  assert.equal(w.document.querySelectorAll("img").length, 0);
+  assert.ok(
+    w.document.querySelector(".request-block").textContent.includes("<img"),
+  );
+  dom.window.close();
+});
+test("Place order exists only in the footer and is disabled for pending OKs", () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.render();
+  assert.equal(w.document.querySelectorAll("[data-action=place]").length, 1);
+  assert.equal(
+    w.document.querySelector("[data-action=place]").closest(".footer-bar") !==
+      null,
+    true,
+  );
+  assert.equal(w.document.querySelector("[data-action=place]").disabled, true);
+  dom.window.close();
+});
+test("approved and reopened rows show the actual approval state", () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  o.checks[0].approved = true;
+  o.checks[0].approved_at = "21:14";
+  o.checks[1].reopened = true;
+  w.hooks.render();
+  assert.ok(
     w.document
-      .querySelector('[data-id="2026-11-20-cream"][data-step="1"]')
-      .click();
-    await wait(20);
-    assert.equal(w.document.querySelectorAll(".check.reopened").length, 2);
-    assert.ok(w.document.querySelector("#place").classList.contains("locked"));
-    assertWorking(w);
-  } finally {
-    dom.window.close();
-  }
+      .querySelector(".approved")
+      .textContent.includes("Approved by Sanna"),
+  );
+  assert.ok(
+    w.document.body.textContent.includes(
+      "You changed the quantity, so please check this again.",
+    ),
+  );
+  dom.window.close();
 });
-test("blank photo has what-we-saw recovery and cannot update order", async () => {
-  const { w, dom } = await setup();
-  try {
-    w.bad = {
-      status: "unreadable",
-      transcript: "",
-      dishes: [],
-      read: [],
-      reason: "Couldn't read the full menu.",
-    };
-    w.testHooks.setPhoto(w.bad, "/whiteboards/blank.jpg");
-    assert.equal(w.document.querySelector("#apply-photo").disabled, true);
-    assert.match(
-      w.document.querySelector("#photo-panel").textContent,
-      /No legible words/,
-    );
-    assert.equal(w.document.querySelector("#place").textContent, "Place order");
-  } finally {
-    dom.window.close();
-  }
+test("receipt is readable without exposing credentials and has actual-call details", () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  o.evidence.calls = [
+    {
+      method: "POST",
+      path: "/api/price",
+      source: "Valio API",
+      request: { customer: "HC-1001" },
+      response: { products: [] },
+      duration_ms: 27,
+    },
+  ];
+  w.hooks.state.drawer = "receipt";
+  w.hooks.render();
+  assert.ok(w.document.querySelector(".receipt details"));
+  assert.ok(w.document.querySelector(".receipt").textContent.includes("27 ms"));
+  assert.ok(
+    !/API_KEY|password/.test(w.document.querySelector(".receipt").textContent),
+  );
+  dom.window.close();
 });
-test("uncertain legible photo exposes in-place correction and explicit review", async () => {
-  const { w, dom } = await setup();
-  try {
-    w.reading = {
-      ...fixture.photo,
-      status: "uncertain",
-      uncertain: ["siika?"],
-    };
-    w.testHooks.setPhoto(w.reading, "/whiteboards/menu-1.jpg");
-    assert.equal(w.document.querySelectorAll("[data-dish]").length, 3);
-    assert.equal(w.document.querySelector("#apply-photo").disabled, true);
-    w.document.querySelector("#confirm-words").click();
-    assert.equal(w.document.querySelector("#apply-photo").disabled, false);
-  } finally {
-    dom.window.close();
-  }
+test("Settings exposes all enforced controls as normal inputs", () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.path = "/settings/rules";
+  w.hooks.render();
+  assert.equal(w.document.querySelectorAll("[data-rule]").length, 5);
+  assert.ok(
+    w.document.body.textContent.includes("These rules apply to every order"),
+  );
+  dom.window.close();
 });
-test("technical receipt takes an extra expansion and removed-menu products cannot be restored with a stepper", async () => {
-  const { w, dom } = await setup();
-  try {
-    w.testHooks.render(fixture.final);
-    w.testHooks.showDecisions();
-    const pre = w.document.querySelector("#decision-panel pre");
-    assert.equal(
-      pre.closest("details").parentElement.closest("details").tagName,
-      "DETAILS",
-    );
-    for (const row of w.document.querySelectorAll(".order-row.removed")) {
-      assert.equal(row.querySelector('[data-step="1"]').disabled, true);
-      assert.ok(!row.querySelector("[data-restore]"));
-    }
-  } finally {
-    dom.window.close();
-  }
-});
-test("stopping during an in-flight story response prevents its late render", async () => {
-  let resolveWedding,
-    called = false;
-  const { w, dom } = await setup((url) => {
-    if (url.endsWith("/story-reading"))
-      return { ready: true, wedding_token: "test", photo: fixture.photo };
-    if (url.endsWith("/story-wedding")) {
-      called = true;
-      return new Promise((r) => (resolveWedding = r));
-    }
-    return fixture.initial;
-  });
-  try {
-    const native = w.setTimeout;
-    w.setTimeout = (fn, ms) => native(fn, Math.min(ms, 1));
-    w.document.querySelector("#play").click();
-    for (let i = 0; i < 100 && !called; i++) await wait(2);
-    assert.ok(called);
-    w.document.querySelector("#stop-story").click();
-    resolveWedding(fixture.wedding);
-    await wait(20);
-    assert.equal(w.document.querySelector("#place").textContent, "Place order");
-    assert.equal(w.document.querySelector("#result-summary").hidden, true);
-    assert.ok(
-      !w.document.querySelector("#notice").textContent.includes("STOP_STORY"),
-    );
-  } finally {
-    dom.window.close();
-  }
-});
-
-test("the entire recorded story reaches confirmation through its controls", async () => {
-  let afterPhoto = false,
-    approveCounts = {};
-  const { w, dom, errors } = await setup((url, body) => {
-    if (url.endsWith("/story-reading"))
-      return {
-        ready: true,
-        wedding_token: "test",
-        read_token: "photo-test",
-        photo: fixture.photo,
-      };
-    if (url.endsWith("/story-wedding")) return fixture.wedding;
-    if (url.endsWith("/photo/apply")) {
-      afterPhoto = true;
-      return fixture.final;
-    }
-    if (url.endsWith("/change")) {
-      if (body.action === "quantity") return fixture.reopened;
-      if (body.action === "place") return fixture.confirmed;
-      if (body.action === "approve") {
-        approveCounts[body.value] = (approveCounts[body.value] || 0) + 1;
-        return afterPhoto
-          ? fixture.final_approved
-          : approveCounts[body.value] > 1
-            ? fixture.approved
-            : fixture.acks[body.value];
-      }
-    }
-    return fixture.initial;
-  });
-  try {
-    const native = w.setTimeout;
-    w.setTimeout = (fn, ms) => native(fn, Math.min(ms, 1));
-    w.document.querySelector("#play").click();
-    for (
-      let i = 0;
-      i < 200 && w.document.querySelector("#confirmation").hidden;
-      i++
-    )
-      await wait(2);
-    assert.equal(w.document.querySelector("#confirmation").hidden, false);
-    assert.match(
-      w.document.querySelector("#confirmation").textContent,
-      /Order placed/,
-    );
-    assert.match(
-      w.document.querySelector("#confirmation").textContent,
-      /Nothing ships/,
-    );
-    assert.equal(w.document.querySelector("#layout").hidden, true);
-    assert.deepEqual(errors, []);
-  } finally {
-    dom.window.close();
-  }
-});
-
-test("a photo finishing after a chef edit never restores the old signed sheet", async () => {
-  let resolvePhoto,
-    photoPending = false,
-    mutationTokens = [];
-  const { w, dom } = await setup((url, body) => {
-    if (url.endsWith("/photo")) {
-      photoPending = true;
-      return new Promise((r) => (resolvePhoto = r));
-    }
-    if (url.endsWith("/change")) {
-      mutationTokens.push(body.token);
-      if (mutationTokens.length === 2)
-        assert.deepEqual(body.photo_receipts, ["photo"]);
-      return fixture.reopened;
-    }
-    return fixture.initial;
-  });
-  try {
-    const input = w.document.querySelector("#photo-file");
-    Object.defineProperty(input, "files", {
-      configurable: true,
-      value: [
-        {
-          size: 1000,
-          type: "image/jpeg",
-          arrayBuffer: async () => new Uint8Array([255, 216, 255, 0]).buffer,
-        },
-      ],
-    });
-    const reading = input.onchange();
-    for (let i = 0; i < 30 && !photoPending; i++) await wait(2);
-    assert.ok(photoPending);
-    w.document.querySelector('[data-step="1"]').click();
-    await wait(15);
-    resolvePhoto({
-      reading: fixture.photo,
-      read_token: "photo",
-      token: fixture.initial.token,
-      calls: [],
-      call: { id: "test-read", source: "Gemini" },
-    });
-    await reading;
-    w.document.querySelector('[data-step="1"]').click();
-    await wait(15);
-    assert.equal(mutationTokens.length, 2);
-    assert.equal(mutationTokens[1], fixture.reopened.token);
-  } finally {
-    dom.window.close();
-  }
-});
-
-test("typing a chef correction stops an in-flight story without a late overwrite", async () => {
-  let resolveWedding,
-    storyPending = false;
-  const { w, dom } = await setup((url) => {
-    if (url.endsWith("/story-reading"))
-      return { ready: true, wedding_token: "test", photo: fixture.photo };
-    if (url.endsWith("/story-wedding")) {
-      storyPending = true;
-      return new Promise((r) => (resolveWedding = r));
-    }
-    if (url.endsWith("/tell"))
-      return {
-        ...fixture.wedding,
-        reading: {
-          status: "readable",
-          transcript: "Wedding Saturday 120 guests salmon and lemon tart",
-        },
-      };
-    return fixture.initial;
-  });
-  try {
-    const native = w.setTimeout;
-    w.setTimeout = (fn, ms) => native(fn, Math.min(ms, 1));
-    w.document.querySelector("#play").click();
-    for (let i = 0; i < 80 && !storyPending; i++) await wait(2);
-    assert.ok(storyPending);
-    w.document.querySelector("#keyboard").click();
-    w.document.querySelector("#tell-text").value =
-      "Wedding Saturday 120 guests salmon and lemon tart";
-    w.document
-      .querySelector("#tell-form")
-      .dispatchEvent(new w.Event("submit", { cancelable: true }));
-    await wait(15);
-    resolveWedding(fixture.initial);
-    await wait(15);
-    assert.equal(
-      w.document.querySelector("#place").textContent,
-      "3 things to check first",
-    );
-    assert.ok(
-      !w.document.querySelector("#notice").textContent.includes("STOP_STORY"),
-    );
-  } finally {
-    dom.window.close();
-  }
+test("a catalogue response preserves a query typed while the first search is loading", async () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.path = "/catalogue";
+  let resolve;
+  w.fetch = () => new Promise((r) => (resolve = r));
+  const pending = w.eval("loadCatalogue()");
+  const input = w.document.querySelector("#catalogue-search input");
+  input.value = "463380";
+  input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  resolve({ ok: true, json: async () => ({ products: [] }) });
+  await pending;
+  assert.equal(
+    w.document.querySelector("#catalogue-search input").value,
+    "463380",
+  );
+  dom.window.close();
 });

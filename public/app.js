@@ -1,986 +1,1084 @@
-"use strict";
-const $ = (s) => document.querySelector(s),
-  $$ = (s) => [...document.querySelectorAll(s)];
-const esc = (s) =>
-  String(s ?? "").replace(
+/* Valio's account portal. All order numbers, prices and decisions come from the server. */
+const $ = (s) => document.querySelector(s);
+const esc = (v) =>
+  String(v ?? "").replace(
     /[&<>"']/g,
     (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
         c
       ],
   );
-const money = (n) =>
+const icon = (name, cls = "") =>
+  `<svg class="icon ${cls}" aria-hidden="true"><use href="/icons.svg#${name}"></use></svg>`;
+const money = (v) =>
   new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(
-    n,
+    v || 0,
   );
-const n = (x) => Number(x.toFixed(3)).toLocaleString("en-GB");
-const paths = {
-  mic: "M12 19v3m-4 0h8M5 10v2a7 7 0 0 0 14 0v-2M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z",
-  camera:
-    "M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3ZM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  keyboard:
-    "M3 5h18v14H3zM7 9h.01M11 9h.01M15 9h.01M18 9h.01M7 12h.01M11 12h.01M15 12h.01M18 12h.01M7 16h10",
-  check: "m5 12 4 4L19 6",
-  alert:
-    "M12 8v5m0 3h.01M10.3 3.8 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.8a2 2 0 0 0-3.4 0Z",
-  plus: "M12 5v14M5 12h14",
-  minus: "M5 12h14",
-  arrow: "M5 12h14m-6-6 6 6-6 6",
-  clock: "M12 8v4l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z",
+const date = (v, long = false) =>
+  v
+    ? new Date(v.length === 10 ? v + "T12:00:00" : v).toLocaleDateString(
+        "en-GB",
+        {
+          weekday: long ? "long" : "short",
+          day: "numeric",
+          month: "short",
+          timeZone: "Europe/Helsinki",
+        },
+      )
+    : "To confirm";
+const time = (v) =>
+  v
+    ? new Date(typeof v === "number" ? v * 1000 : v).toLocaleTimeString(
+        "en-GB",
+        { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Helsinki" },
+      )
+    : "Not supplied";
+const btn = (label, action, cls = "", attrs = "") =>
+  `<button class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;
+let S = {
+  account: null,
+  order: null,
+  path: location.pathname,
+  drawer: null,
+  error: "",
+  busy: false,
+  working: false,
+  steps: [],
+  request: "",
+  input: "",
+  question: "",
+  filter: "all",
+  tab: "Placed",
+  catalogue: [],
+  catalogueQuery: "",
+  catalogueLoaded: false,
+  readOrder: null,
+  bell: false,
+  menu: false,
+  editing: false,
+  media: null,
+  mediaName: "",
+  listening: false,
+  level: 0,
+  notice: "",
 };
-const icon = (k) =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[k] || paths.alert}"/></svg>`;
-$("#mic-icon").innerHTML = icon("mic");
-$("#keyboard").innerHTML = icon("keyboard");
-$("#camera").innerHTML = icon("camera");
-let order = null,
-  busy = false,
-  onlyChanges = false,
-  expanded = new Set(),
-  photo = null,
-  readToken = null,
-  photoSrc = "",
-  photoReadRun = 0,
-  photoReceipts = [],
-  storyRun = 0,
-  storyActive = false,
-  recorder = null,
-  audioStream = null,
-  audioContext = null,
-  recordingPending = false,
-  listenedTokens = [],
-  releaseRequested = false;
-const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-function notice(message) {
-  $("#notice").textContent = message;
-  $("#notice").hidden = false;
-}
-function clearNotice() {
-  $("#notice").hidden = true;
-}
+const nav = [
+  ["Dashboard", "/dashboard", "layout-dashboard"],
+  ["Orders", "/orders", "clipboard-list"],
+  ["Catalogue", "/catalogue", "search"],
+  ["Deliveries", "/deliveries", "truck"],
+  ["Invoices", "/invoices", "receipt"],
+  ["Settings", "/settings/rules", "settings"],
+];
 async function api(path, body) {
-  const res = await fetch("/api/sheet" + path, {
-    method: body ? "POST" : "GET",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
+  const r = await fetch("/api" + path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = await res.json();
-  if (!res.ok)
-    throw new Error(
-      data.error ||
-        "Valio could not be reached. Your order has not changed. Try again.",
-    );
+  let data;
+  try {
+    data = await r.json();
+  } catch {
+    throw Error("Valio could not finish that check. Try again.");
+  }
+  if (!r.ok) throw Error(data.error || "Valio is unavailable. Try again.");
   return data;
 }
-function dayName(d) {
-  return new Date(d + "T12:00:00+02:00").toLocaleDateString("en-GB", {
+async function task(fn) {
+  if (S.busy) return;
+  S.busy = true;
+  S.error = "";
+  render();
+  try {
+    await fn();
+  } catch (e) {
+    S.error = e.message;
+  } finally {
+    S.busy = false;
+    render();
+  }
+}
+function navigate(path) {
+  S.path = path;
+  S.error = "";
+  S.bell = false;
+  S.menu = false;
+  S.readOrder = null;
+  history.pushState({}, "", path);
+  render();
+  window.scrollTo(0, 0);
+  if (
+    path === "/orders" ||
+    path === "/dashboard" ||
+    path === "/deliveries" ||
+    path === "/invoices"
+  )
+    refreshAccount();
+  if (path === "/catalogue" && !S.catalogueLoaded) loadCatalogue();
+}
+async function refreshAccount() {
+  try {
+    S.account = await api("/account");
+    if (
+      !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)
+    )
+      render();
+  } catch (e) {
+    S.error = e.message;
+    render();
+  }
+}
+async function ensureDraft() {
+  const id = localStorage.getItem("aurora-draft");
+  if (id) {
+    try {
+      S.order = await api("/drafts/" + id);
+      return;
+    } catch {
+      localStorage.removeItem("aurora-draft");
+    }
+  }
+  S.order = await api("/drafts", {});
+  localStorage.setItem("aurora-draft", S.order.draft_id);
+}
+async function boot() {
+  if (S.path === "/") {
+    render();
+    return;
+  }
+  render();
+  try {
+    S.account = await api("/account");
+    await ensureDraft();
+    render();
+    if (S.path === "/catalogue") loadCatalogue();
+    if (S.path.startsWith("/orders/AU-")) {
+      const saved = S.account.orders.find((o) =>
+        S.path.endsWith(o.order_number),
+      );
+      if (saved?.draft_id) {
+        S.readOrder = await api("/drafts/" + saved.draft_id);
+        render();
+      }
+    }
+  } catch (e) {
+    S.error = e.message;
+    S.path = "/";
+    history.replaceState({}, "", "/");
+    render();
+  }
+}
+function table(head, rows, cls = "") {
+  return `<div class="table-wrap"><table class="table ${cls}"><thead><tr>${head.map((h, i) => `<th class="${/Total|price/.test(h) ? "money" : ""}">${h}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="${head.length}" class="empty">No orders in this view.</td></tr>`}</tbody></table></div>`;
+}
+function start() {
+  return `<div class="start"><section class="card signin"><div class="wordmark">Valio Aimo</div><h2>Sign in to order for your kitchen</h2>${btn("Continue with company account", "company", "primary")}${S.notice ? `<p class="note">Company sign-in is set up by your Valio contact</p>` : ""}<hr>${btn("Try the demo account (Hotel Aurora)", "login", "link")}<footer class="tiny">Prices and stock come live from Valio's system.</footer>${S.error ? `<p class="error" role="alert">${esc(S.error)}</p>` : ""}</section></div>`;
+}
+function title() {
+  if (S.readOrder) return "Order " + S.readOrder.order_number;
+  if (S.path.startsWith("/orders/"))
+    return S.path.includes("confirmation")
+      ? "Order confirmation"
+      : "Order for week 47";
+  if (S.path.startsWith("/settings")) return "Settings";
+  return nav.find((n) => n[1] === S.path)?.[0] || "Dashboard";
+}
+function render() {
+  if (S.path === "/") {
+    $("#app").innerHTML = start();
+    document.body.className = "";
+    return;
+  }
+  const active = S.path.startsWith("/settings")
+    ? "/settings/rules"
+    : S.path.startsWith("/orders")
+      ? "/orders"
+      : S.path;
+  document.body.className =
+    (S.drawer ? "has-drawer " : "") +
+    (S.drawer === "receipt" ? "has-receipt" : "");
+  $("#app").innerHTML =
+    `<aside class="sidebar ${S.menu ? "open" : ""}"><div class="brand"><div class="wordmark">Valio Aimo</div><div class="tiny">Hotel Aurora</div></div><nav>${nav.map(([label, path, ic]) => `<a class="nav-item ${active === path ? "current" : ""}" href="${path}" data-nav="${path}">${icon(ic, "nav-icon")}${label}</a>`).join("")}</nav>${S.accountMenu ? btn(icon("log-out") + "Sign out", "logout", "ghost") : ""}<button class="account-row" data-action="account-menu"><span class="avatar">SV</span><span>Sanna Virtanen<span class="tiny" style="display:block">Head chef</span></span></button></aside><div class="workspace"><header class="topbar"><h1>${esc(title())}</h1><span class="wordmark mobile-brand">Valio Aimo</span><div class="top-actions">${btn(icon("mic") + '<span class="ask-label">Ask Valio</span>', "ask", "secondary ask-open", 'aria-label="Ask Valio"')}${btn(icon("bell") + (unread() ? '<i class="unread"></i>' : ""), "bell", "icon-btn bell", 'aria-label="Account events"')}${btn(icon("menu"), "menu", "icon-btn mobile-menu", 'aria-label="Open menu"')}</div></header><main><h1 class="mobile-title">${esc(title())}</h1>${S.error ? `<div role="alert" class="error">${esc(S.error)}</div>` : ""}${!S.order || !S.account ? '<div class="skeleton" aria-label="Loading account"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>' : page()}</main>${footer()}</div>${S.drawer ? drawer() : ""}${S.bell ? events() : ""}${S.why ? why() : ""}${S.invoice ? invoice() : ""}`;
+}
+function unread() {
+  return S.account?.events.some(
+    (e) =>
+      !JSON.parse(localStorage.getItem("aurora-read") || "[]").includes(e.id),
+  );
+}
+function page() {
+  if (S.readOrder) return orderPage(S.readOrder, true);
+  if (S.path.includes("confirmation")) return confirmation();
+  if (S.path === "/dashboard") return dashboard();
+  if (S.path === "/orders") return ordersPage();
+  if (S.path.startsWith("/orders/"))
+    return orderPage(S.order, S.order.status === "placed");
+  if (S.path === "/catalogue") return catalogue();
+  if (S.path === "/deliveries") return deliveries();
+  if (S.path === "/invoices") return invoices();
+  if (S.path.startsWith("/settings")) return settings();
+  return dashboard();
+}
+function budget(o) {
+  const max = Math.max(o.total, o.budget) * 1.04,
+    limit = (o.budget / max) * 100;
+  return `<div class="budget" aria-label="${money(o.total)} of ${money(o.budget)} weekly budget"><i class="budget-fill" style="width:${(Math.min(o.total, o.budget) / max) * 100}%"></i><i class="budget-over" style="width:${(Math.max(0, o.total - o.budget) / max) * 100}%"></i><i class="budget-tick" style="left:${limit}%"></i></div>`;
+}
+const stageNames = [
+  "Reading your recipes",
+  "Scaling to 120 guests",
+  "Checking Saturday stock at Valio",
+  "Comparing pack sizes and prices",
+  "Checking allergens: no nuts",
+  "Checking your budget",
+];
+function checklist() {
+  return `<div class="checklist" aria-live="polite">${S.steps.map((s, i) => `<div class="checklist-row" data-stage="${i}">${s.done ? (s.attention ? '<i class="attention-dot"></i>' : icon("check", "green")) : '<i class="spinner"></i>'}<span>${esc(s.label)}</span><span class="result ${s.attention ? "amber" : ""}">${esc(s.result)}</span></div>`).join("")}</div>`;
+}
+function deliveryMini(d) {
+  return `<div class="delivery-mini"><span>${date(d.date)}</span><span class="muted">· arrival time to confirm · ${d.rows.filter((r) => r.units > 0).length} products ·</span><span>${money(d.subtotal)}</span></div>`;
+}
+function dashboard() {
+  const o = S.order;
+  const today = new Date();
+  const stamp = today.toLocaleDateString("en-GB", {
     weekday: "short",
     day: "numeric",
     month: "short",
     timeZone: "Europe/Helsinki",
   });
+  const pending = o.pending;
+  const heading = S.working
+    ? "Updating next week's order"
+    : o.status === "placed"
+      ? "Next week's order is placed"
+      : pending
+        ? `Next week's order needs ${pending} OKs`
+        : "Next week's order is ready";
+  return `<div class="subline">${stamp} · ordering for week 47</div><div class="dashboard-grid"><section class="card order-card"><div class="between"><h2>${heading}</h2><span class="pill ${S.working ? "" : pending ? "warn" : "ok"}">${S.working ? "Updating…" : o.status === "placed" ? "Placed" : pending ? `${pending} to approve` : "Ready to send"}</span></div><p class="prepared">Prepared from your menu, ${S.account.bookings.reduce((n, b) => n + b.covers, 0)} bookings and current stock.</p><p class="totals"><span data-total="${o.total}">${o.rows.filter((r) => r.units > 0).length} products · ${o.deliveries.length} deliveries · <span id="animated-total">${money(o.total)}</span></span> of your ${money(o.budget)} weekly budget</p>${budget(o)}${S.working ? checklist() : o.deliveries.map(deliveryMini).join("")}${o.request && !S.working ? `<p class="change-summary">${summary(o)}</p>` : ""}<div class="row order-actions">${btn("Review order", "review", "primary", S.working ? "disabled" : "")}${btn("Change something", "ask", "ghost", o.status === "placed" ? "disabled" : "")}</div></section><section class="card summary-card"><h3>This week and month</h3>${summaryRows(o)}</section></div><section class="recent"><h3>Recent orders</h3>${orderTable(S.account.orders.slice(0, 5), true)}</section>`;
 }
-function cutoff(d) {
-  if (!d.cutoff)
-    return '<span>Order by: not supplied</span><span class="pill attention">Check time with Valio</span>';
-  let minutes = Math.floor((new Date(d.cutoff) - Date.now()) / 60000),
-    time = new Date(d.cutoff)
-      .toLocaleString("en-GB", {
-        weekday: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Europe/Helsinki",
-      })
-      .replace(",", "");
-  return `<span>Order by ${esc(time)}</span><span class="pill ${minutes < 0 ? "problem" : minutes < 180 ? "attention" : "ok"}">${icon("clock")}${minutes < 0 ? "Cut-off passed" : `${Math.floor(minutes / 60)} h ${minutes % 60} min left`}</span>`;
+function summary(o) {
+  const n = o.rows.filter((r) => r.change && r.units > 0).length;
+  const delta = o.total - o.baseline_total;
+  return `${delta >= 0 ? "Added" : "Removed"} ${n} products for ${o.wedding ? new Date(o.wedding.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long" }) + " " + (o.wedding.event || "wedding").toLowerCase() : "your kitchen change"} (${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}).`;
 }
-function working(r) {
-  const groups = new Map();
-  for (const part of r.allocations)
-    groups.set(part.per_cover, (groups.get(part.per_cover) || 0) + part.covers);
-  const unit = r.unit === "l" ? "ml" : "g";
-  let term = [...groups]
-    .map(
-      ([grams, covers]) =>
-        `${n(covers)}${groups.size === 1 ? (r.allocations.some((a) => a.wedding) ? " guests" : " covers") : ""} × ${n(grams)}`,
-    )
-    .join(" + ");
-  term = groups.size
-    ? `${term} ${unit}`
-    : r.change === "Removed"
-      ? "Removed from the menu"
-      : "Added by the chef";
-  return `${esc(term)} <span class="operator">=</span> ${n(r.gross)} ${esc(r.unit)}${r.stock ? ` <span class="operator">−</span> ${n(r.stock)} in stock` : ""} <span class="operator">→</span> <b>${n(r.units)} × ${n(r.pack)} ${esc(r.unit)}</b>`;
+function summaryRows(o) {
+  const cuts = o.deliveries
+    .map((d) => d.cutoff)
+    .filter(Boolean)
+    .sort();
+  const cut = cuts[0];
+  const left = cut ? Math.max(0, new Date(cut) - Date.now()) : 0;
+  const spent = S.account.orders
+    .filter((r) => r.placed_at.startsWith("2026-11"))
+    .reduce((n, r) => n + r.total, 0);
+  return `<div class="summary-row"><span>Order by</span><span>${cut ? `${date(cut).split(" ")[0]} ${time(cut)}<br><span class="tiny">${Math.floor(left / 3600000)} h ${Math.floor((left % 3600000) / 60000)} min left</span>` : "To confirm"}</span></div><div class="summary-row"><span>First delivery</span><span>${date(o.deliveries[0]?.date)}<br><span class="tiny">Arrival time to confirm</span></span></div><div class="summary-row"><span>Spent in November</span><span>${money(spent)} of ${money(o.rules.monthly_limit)}</span></div><div class="summary-row"><span>Left this month</span><span>${money(Math.max(0, o.rules.monthly_limit - spent))}</span></div>`;
 }
-function detail(r) {
-  return `<div class="working-detail" id="working-${r.id}" ${expanded.has(r.id) ? "" : "hidden"}>${r.allocations.map((a) => `<div class="sum-item"><span>${esc(a.dish)} · ${dayName(a.date)} · ${n(a.covers)} × ${n(a.per_cover)} ${r.unit === "l" ? "ml" : "g"}</span><strong>${n(a.amount)} ${r.unit}</strong></div>`).join("")}<div class="sum-item"><span>Recipe need</span><strong>${n(r.gross)} ${r.unit}</strong></div><div class="sum-item"><span>Minus kitchen stock and earlier pack remainder</span><strong>−${n(r.stock)} ${r.unit}</strong></div><div class="sum-item"><span>Need to buy</span><strong>${n(r.need)} ${r.unit}</strong></div><div class="sum-item"><span>Rounded up to ${n(r.pack)} ${r.unit} sales units</span><strong>${n(r.planned_units)} × ${n(r.pack)} ${r.unit}</strong></div>${r.units !== r.planned_units ? `<div class="sum-item"><span>Chef changed the quantity</span><strong>${n(r.units)} × ${n(r.pack)} ${r.unit}</strong></div>` : ""}<div class="sum-item"><span>${money(r.unit_price)} per sales unit × ${n(r.units)}</span><strong>${money(r.total)}</strong></div>${r.comparison_price ? `<div class="sum-item"><span>Valio comparison price</span><strong>${money(r.comparison_price)} / ${r.unit}</strong></div>` : ""}<p class="meta">${esc(r.pack_source)}. ${esc(r.reason)}</p><p class="meta">${r.availability.model === "Terminal" ? "Arrives via terminal. " : ""}${r.availability.closing_time ? "Cut-off supplied by Valio." : "Valio did not supply this product’s cut-off. No time has been assumed."}</p><a href="#decision-panel" data-decisions>How this was decided</a></div>`;
-}
-function rowHTML(r, previous, index, animate) {
-  const changed =
-    previous &&
-    (previous.units !== r.units ||
-      previous.product_id !== r.product_id ||
-      previous.total !== r.total);
-  let arrive = animate && (changed || !previous);
-  return `<div class="row-shell${arrive ? " arrive" : ""}" style="--delay:${Math.min(index, 7) * 60}ms"><article class="order-row${r.units === 0 ? " removed" : ""}" id="row-${r.id}" data-row="${r.id}"><div class="row-main"><div class="product"><div class="product-name"><strong title="${esc(r.name)}">${esc(r.name)}</strong><span class="pack">${n(r.pack)} ${r.unit}${r.sales_unit === "KG" ? " / kg" : ""}</span></div><button class="working" data-working="${r.id}" aria-expanded="${expanded.has(r.id)}" aria-controls="working-${r.id}">${working(r)}</button>${r.change ? `<span class="change-tag">${r.change} · ${esc(r.change_reason)}</span>` : ""}${r.availability.model === "Terminal" ? '<span class="terminal">Arrives via terminal</span>' : ""}</div><div class="row-price${changed ? " roll" : ""}">${money(r.total)}</div><div class="stepper" aria-label="${esc(r.name)} sales units"><button data-step="-1" data-id="${r.id}" aria-label="Less ${esc(r.name)}" ${r.units === 0 || r.change === "Removed" ? "disabled" : ""}>${icon("minus")}</button><span class="qty${changed ? " roll" : ""}" data-quantity="${r.id}">${n(r.units)}</span><button data-step="1" data-id="${r.id}" ${r.change === "Removed" ? "disabled" : ""} aria-label="More ${esc(r.name)}">${icon("plus")}</button></div></div>${r.units === 0 ? (r.change === "Removed" ? `<button class="text-button" data-undo-menu>Undo menu</button>` : `<button class="text-button" data-restore="${r.id}">Put back</button>`) : ""}${detail(r)}</article></div>`;
-}
-function render(next, animate = false) {
-  let old = order;
-  order = next;
-  const first = !old;
-  clearNotice();
-  if (next.place_error) notice(next.place_error);
-  const byId = new Map((old?.rows || []).map((r) => [r.id, r]));
-  let changedIndex = 0;
-  $("#intro").textContent =
-    `${new Set(next.rows.filter((r) => r.units > 0).map((r) => r.product_id)).size} products, ${next.deliveries.length} deliveries. Built from your menu, ${412 + (next.wedding?.covers || 0)} booked covers and your stock.`;
-  $("#sheet").innerHTML =
-    next.deliveries
-      .map((d) => {
-        let rows = d.rows.filter((r) => !onlyChanges || r.change);
-        if (!rows.length) return "";
-        return `<section class="delivery" id="delivery-${d.date}"><div class="day-band"><h2>${dayName(d.date)} delivery</h2><div class="cutoff" data-date="${d.date}">${cutoff(d)}</div></div>${rows.map((r) => rowHTML(r, byId.get(r.id), r.change ? changedIndex++ : 0, animate && !!r.change)).join("")}<div class="day-total"><span>${dayName(d.date)} subtotal</span><strong>${money(d.subtotal)}</strong></div></section>`;
-      })
-      .join("") ||
-    '<p class="all-clear">No changed products on this sheet.</p>';
-  renderChecks();
-  renderCovers();
-  renderBudget();
-  $("#kitchen-details").innerHTML =
-    `<p>${esc(next.kitchen.fixture_note)}</p><strong>Kitchen rules</strong><ul>${next.kitchen.rules.map((r) => `<li>${esc(r)}</li>`).join("")}</ul><details><summary>Menu, recipes and current stock</summary>${Object.entries(
-      next.recipes,
-    )
+function orderTable(rows, recent = false) {
+  return table(
+    recent
+      ? ["Order no.", "Placed by", "Delivered", "Products", "Total", "Note"]
+      : [
+          "Order no.",
+          "Placed by",
+          "Placed at",
+          "Deliveries",
+          "Total",
+          "Status",
+        ],
+    rows
       .map(
-        ([key, r]) =>
-          `<p><strong>${esc(r.name)}</strong><br>${Object.entries(r.ingredients)
-            .map(
-              ([role, g]) =>
-                `${esc(role)} ${g} ${["milk", "cream", "lemon"].includes(role) ? "ml" : "g"} per cover`,
-            )
-            .join(" · ")}</p>`,
+        (o) =>
+          `<tr class="clickable ${Date.now() - new Date(o.placed_at) < 3000 ? "new-order" : ""}" data-open-order="${esc(o.order_number)}" tabindex="0"><td><a href="/orders/${esc(o.order_number)}" data-open-order="${esc(o.order_number)}">${esc(o.order_number)}</a></td><td><span class="placed-by">${o.placed_by === "Aurora Group assistant" ? icon("plug") : ""}${esc(o.placed_by)}</span>${o.placed_by === "Aurora Group assistant" ? '<span class="tiny">Placed by Aurora Group assistant · Within your rules</span>' : ""}</td><td>${date(o.placed_at)}${recent ? "" : `<span class="tiny">${time(o.placed_at)}</span>`}</td><td>${recent ? o.products : o.deliveries.length}</td><td class="money">${money(o.total)}</td><td>${recent ? "" : `<span class="pill ${o.status === "Delivered" ? "" : "ok"}">${esc(o.status)}</span>`}</td></tr>`,
       )
-      .join("")}<p>Kitchen stock in kg or l: ${Object.entries(next.stock)
-      .map(([role, a]) => `${esc(role)} ${n(a)}`)
-      .join(
-        " · ",
-      )}</p></details><p>Prices checked ${new Date(next.quote_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}. Prices exclude VAT.</p>`;
-  $("#place").disabled = false;
-  $("#place").classList.toggle("locked", !next.can_place);
-  $("#place").textContent = next.pending
-    ? `${next.pending} thing${next.pending === 1 ? "" : "s"} to check first`
-    : "Place order";
-  if (animate && old) {
-    const counts = { Added: 0, More: 0, Less: 0, Removed: 0, Swapped: 0 };
-    next.rows.forEach((r) => {
-      let p = byId.get(r.id);
-      if (
-        r.change &&
-        (!p || r.units !== p.units || r.product_id !== p.product_id)
+      .join(""),
+  );
+}
+function ordersPage() {
+  const rows =
+    S.tab === "Drafts"
+      ? S.order.status === "draft"
+        ? [
+            {
+              order_number: "Week 47",
+              placed_by: "Sanna Virtanen",
+              placed_at: S.order.quote_at,
+              deliveries: S.order.deliveries,
+              total: S.order.total,
+              status: "Draft",
+              products: S.order.rows.length,
+            },
+          ]
+        : []
+      : S.account.orders.filter((o) => o.status === S.tab);
+  return `<div class="tabs">${["Drafts", "Placed", "Delivered"].map((t) => btn(t, "order-tab", S.tab === t ? "active" : "", `data-value="${t}"`)).join("")}</div>${orderTable(rows)}`;
+}
+function approvalTitle(c, o) {
+  if (c.kind === "swap") {
+    const r = o.rows.find((r) => c.row_ids.includes(r.id));
+    return `Swap salmon for ${esc(r?.name || "the available fish")}`;
+  }
+  if (c.kind === "pack") {
+    const r = o.rows.find((r) => c.row_ids.includes(r.id));
+    return `Buy cream as ${r?.units} × ${r?.pack} L packs`;
+  }
+  if (c.id === "budget")
+    return `${money(o.total - o.budget)} over your ${money(o.budget)} weekly limit`;
+  return esc(c.text);
+}
+function approval(c, o) {
+  if (c.approved)
+    return `<div class="approval approved" data-check="${esc(c.id)}">${icon("check")}<span class="approval-copy">Approved by Sanna · ${esc(c.approved_at)}</span>${btn("Undo", "unapprove", "link", `data-value="${esc(c.id)}"`)}</div>`;
+  return `<div class="approval" data-check="${esc(c.id)}">${icon(c.kind === "swap" ? "repeat-2" : c.kind === "pack" ? "package" : c.kind === "budget" ? "wallet" : "circle-alert")}<div class="approval-copy"><div class="approval-title">${approvalTitle(c, o)}</div><p>${esc(c.text)}</p>${c.reopened ? '<p class="reopened">You changed the quantity, so please check this again.</p>' : ""}</div><div class="approval-buttons">${c.kind === "gap" ? btn(c.row_ids.length ? "Restore quantity" : "Change menu", c.row_ids.length ? "restore" : "ask", "secondary", `data-value="${esc(c.row_ids[0] || "")}"`) : btn(c.kind === "budget" ? "Change order" : "Keep original", c.kind === "pack" ? "small-cream" : c.kind === "swap" ? "keep-original" : "change-order", "ghost")}${c.can_approve ? btn(c.kind === "budget" ? "Approve once" : "Approve", "approve", "primary", `data-value="${esc(c.id)}" ${S.busy ? "disabled" : ""}`) : ""}</div></div>`;
+}
+function eventTag(o) {
+  return o.wedding
+    ? "For " +
+        new Date(o.wedding.date + "T12:00:00").toLocaleDateString("en-GB", {
+          weekday: "long",
+        }) +
+        " " +
+        (o.wedding.event || "wedding").toLowerCase()
+    : "For kitchen change";
+}
+function orderPage(o, readonly = false) {
+  const count = o.rows.filter((r) => r.units > 0).length;
+  const changed = o.rows.filter((r) => r.change).length;
+  return `<div class="subline"><span>${o.deliveries.length} deliveries · ${count} products · ${readonly ? "Placed " + date(o.placed_at) : "Not sent to Valio yet"}</span>${btn("How this was decided", "receipt", "secondary")}</div>${!readonly && o.checks.length ? `<section class="approvals"><h3>Needs your OK (${o.pending})</h3><div class="approval-box">${o.checks.map((c) => approval(c, o)).join("")}</div></section>` : ""}${!readonly ? `<div class="filter" aria-label="Order products">${btn(`Changed (${changed})`, "filter", S.filter === "changed" ? "active" : "", 'data-value="changed"')}${btn(`All (${count})`, "filter", S.filter === "all" ? "active" : "", 'data-value="all"')}</div>` : '<div style="height:16px"></div>'}${o.deliveries
+    .map((d) => {
+      const rows = d.rows.filter(
+        (r) => readonly || S.filter === "all" || r.change,
+      );
+      if (!rows.length) return "";
+      return `<section class="delivery-section"><div class="day-header"><div><h3>${date(d.date, true)} · arrival time to confirm</h3><p>Order by ${d.cutoff ? date(d.cutoff) + " " + time(d.cutoff) : "cut-off not supplied"}</p></div><span>${money(d.subtotal)}</span></div>${table(["Product", "Quantity", "Unit price", "Total", ""], rows.map((r) => `<tr data-row="${esc(r.id)}"><td class="product"><div class="product-name">${esc(r.name)}</div><span class="tiny">${r.pack} ${esc(r.unit)} · <span class="product-code">${esc(r.product_id)}</span>${r.previous_units !== null && r.previous_units !== undefined && r.previous_units !== r.units ? `<span class="was"><s>was ${r.previous_units}</s></span>` : ""}</span>${r.change ? `<span class="tag">${r.change === "Swapped" ? esc(r.change_reason) : eventTag(o)}</span>` : ""}</td><td>${readonly ? r.units : `<div class="stepper">${btn("−", "qty", "", `aria-label="Less ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units - 1}" ${S.busy || r.units === 0 ? "disabled" : ""}`)}<span>${r.units}</span>${btn("+", "qty", "", `aria-label="More ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units + 1}" ${S.busy ? "disabled" : ""}`)}</div>`}</td><td class="money unit-price">${money(r.unit_price)}</td><td class="money">${money(r.total)}</td><td>${btn("Why?", "why", "link why " + (!r.change ? "unchanged" : ""), `data-value="${esc(r.id)}"`)}</td></tr>`).join(""), "order-table")}</section>`;
+    })
+    .join("")}`;
+}
+function footer() {
+  if (
+    !S.order ||
+    !S.account ||
+    S.readOrder ||
+    !S.path.startsWith("/orders/") ||
+    S.path.includes("confirmation") ||
+    S.order.status === "placed"
+  )
+    return "";
+  const o = S.order;
+  return `<div class="footer-bar"><div class="footer-total">Total ${money(o.total)}${o.total > o.budget ? `<span class="amber">${money(o.total - o.budget)} over weekly budget</span>` : ""}</div><div class="row">${o.pending ? `<span class="small muted">${o.pending} still need your OK</span>` : ""}${btn(S.busy ? "Checking…" : "Place order", "place", "primary", !o.can_place || S.busy ? "disabled" : "")}</div></div>`;
+}
+function confirmation() {
+  const o = S.order;
+  return `<section class="card confirmation">${icon("circle-check")}<h1>Order sent to Valio</h1><p class="muted">Order ${esc(o.order_number || o.confirmation?.order_number)}</p><div class="deliveries">${o.deliveries.map(deliveryMini).join("")}</div><p>You'll get a confirmation from Valio by email.</p><div class="row" style="margin-top:24px">${btn("View orders", "orders", "primary")}${btn("Dashboard", "dashboard", "ghost")}</div><p class="tiny">Demo account: no real order was placed.</p></section>`;
+}
+function catalogue() {
+  return `<form class="search-form" id="catalogue-search"><input name="q" aria-label="Search products or codes" placeholder="Search products or codes" value="${esc(S.catalogueQuery)}">${btn("Search", "search", "secondary", S.busy ? "disabled" : "")}</form>${!S.catalogueLoaded ? '<div class="skeleton" aria-label="Loading catalogue"></div>' : table(["Product", "Pack", "Code", "Price per pack", "Per kg/L", "Stock date", ""], S.catalogue.map((p) => `<tr><td>${esc(p.name_fi || p.name)}</td><td>${p.pack || "—"} ${esc(p.pack_dim || p.sales_unit)}</td><td class="product-code">${esc(p.id)}</td><td class="money">${money(p.unit_price)}</td><td class="money">${p.comparison_price ? money(p.comparison_price) : "—"}</td><td>${date(p.availability.available_date)}<span class="tiny">${p.allowed ? "Available" : "Not within your rules or cut-off"}</span></td><td>${btn("Add to order", "add", "secondary", `data-value="${esc(p.id)}" ${!p.allowed || S.busy ? "disabled" : ""}`)}</td></tr>`).join(""))}${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
+}
+function deliveries() {
+  const placed = S.account.orders.filter((o) => o.status === "Placed");
+  const ds = placed.flatMap((o) =>
+    o.deliveries.map((d) => ({ ...d, order: o.order_number })),
+  );
+  const rows = ds.length
+    ? ds
+    : S.order.deliveries.map((d) => ({ ...d, order: "Week 47 · Not placed" }));
+  return table(
+    ["Day", "Arrival time", "Order by", "Products", "Total", "Order"],
+    rows
+      .map(
+        (d) =>
+          `<tr><td>${date(d.date, true)}</td><td>To confirm</td><td>${d.cutoff ? date(d.cutoff) + " " + time(d.cutoff) : "Not supplied"}</td><td>${d.rows.length}</td><td class="money">${money(d.subtotal)}</td><td>${esc(d.order)}</td></tr>`,
       )
-        counts[r.change]++;
-    });
-    old.rows.forEach((r) => {
-      if (!next.rows.some((v) => v.id === r.id)) counts.Removed++;
-    });
-    $("#result-summary").hidden = false;
-    $("#result-summary").innerHTML = `<span>${
-      Object.entries(counts)
-        .filter(([, v]) => v)
-        .map(([k, v]) => `${k} ${v}`)
-        .join(", ") || "Updated your menu"
-    }. ${money(old.total)} → ${money(next.total)}.</span><button class="text-button" id="only-changes">${onlyChanges ? "Show full order" : "Show only what changed"}</button><button class="text-button" id="undo-wedding">Undo</button>`;
-  }
-  if (next.confirmation) showConfirmation();
-  else {
-    $("#confirmation").hidden = true;
-    $("#layout").hidden = false;
-    $("#dock").hidden = false;
-  }
-  if (first) $("#main").setAttribute("aria-busy", "false");
+      .join(""),
+  );
 }
-function renderChecks() {
-  let cs = order.checks;
-  $("#checks").innerHTML =
-    `<h2>${!cs.length ? "Ready to order" : order.pending ? `${order.pending} thing${order.pending === 1 ? "" : "s"} to check` : "All checked"}</h2>${!cs.length ? `<div class="all-clear">${icon("check")}Nothing needs your OK</div>` : cs.map((c) => (c.approved ? `<div class="check approved">${icon("check")}<span>${c.kind === "swap" ? "Swap" : c.kind === "pack" ? "Larger pack" : "Budget"} OK'd ${esc(c.approved_at)}</span><button class="text-button" data-unapprove="${c.id}">Undo</button></div>` : `<div class="check${c.reopened ? " reopened" : ""}" id="check-${c.id}"><div class="check-head">${icon("alert")}<div class="check-text">${c.reopened ? `<strong class="reopen-copy">You changed ${c.kind === "budget" ? "the order" : c.kind === "pack" ? "Kuohukerma" : "the fish"}, so this needs your OK again. </strong>` : ""}${esc(c.text)}</div></div>${c.proof ? `<p class="check-proof">${esc(c.proof)} <a href="#row-${c.row_ids[0]}" data-proof="${c.row_ids[0]}">See the working</a></p>` : ""}<div class="check-actions"><button ${c.can_approve ? `data-approve="${c.id}"` : `data-fix="${c.row_ids[0] || ""}"`}>${esc(c.button)}</button>${c.alternative ? `<button class="text-button" data-alternative="${c.id}">${esc(c.alternative)}</button>` : ""}</div></div>`)).join("")}`;
+function invoices() {
+  return table(
+    ["Month", "Total", ""],
+    S.account.orders
+      .filter((o) => o.historical)
+      .map(
+        (o) =>
+          `<tr><td>${new Date(o.placed_at).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}<span class="tiny">${esc(o.order_number)}</span></td><td class="money">${money(o.total)}</td><td>${btn("View", "invoice", "link", `data-value="${esc(o.order_number)}"`)}</td></tr>`,
+      )
+      .join(""),
+  );
 }
-function renderCovers() {
-  $("#covers").innerHTML =
-    `<h2>Covers this week</h2>${order.kitchen.bookings.map((b) => `<div class="cover-day"><span>${b.day}</span>${b.day === "Sat" && order.wedding ? `<span class="event">Wedding ${order.wedding.covers}</span>` : ""}<span class="count">${b.covers + (b.day === "Sat" ? order.wedding?.covers || 0 : 0)}</span></div>`).join("")}<p class="meta">Room bookings and events · demo kitchen</p>`;
+function settings() {
+  const section = S.path.split("/")[2] || "rules";
+  return `<div class="settings-layout"><nav class="settings-nav" aria-label="Settings">${[
+    ["rules", "Ordering rules"],
+    ["team", "Team"],
+    ["connected-ai", "Connected assistants"],
+    ["kitchen", "Kitchen profile"],
+  ]
+    .map(
+      ([id, name]) =>
+        `<a href="/settings/${id}" data-nav="/settings/${id}" class="${section === id ? "current" : ""}">${name}</a>`,
+    )
+    .join(
+      "",
+    )}</nav><div class="settings-content">${section === "rules" ? rulesView() : section === "connected-ai" ? connected() : section === "team" ? team() : kitchenProfile()}</div></div>`;
 }
-function renderBudget() {
-  let over = order.total > order.budget;
-  $("#total").textContent = money(order.total);
-  $("#edit-budget").textContent = `of ${money(order.budget)} budget`;
-  $("#budget").classList.toggle("over", over);
-  $("#budget-fill").style.width =
-    Math.min(100, (order.total / order.budget) * 80) + "%";
-  $("#budget-state").textContent = over
-    ? `${money(order.total - order.budget)} over${order.checks.find((c) => c.id === "budget")?.approved ? " · OK’d this week" : ""}`
-    : `${money(order.budget - order.total)} within budget`;
+function rulesView() {
+  const r = S.account.rules;
+  const stamp = `Changed by ${esc(r.changed_by)}, ${new Date(r.changed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+  const row = (label, control) =>
+    `<div class="rule-row"><label>${label}<span class="tiny">${stamp}</span></label>${control}</div>`;
+  return `<section class="rule-section"><h3>Budget</h3>${row("Weekly limit", `<div class="row"><span>€</span><input type="number" min="1" step=".01" aria-label="Weekly limit" data-rule="weekly_limit" value="${r.weekly_limit}"></div>`)}${row("When an order goes over", `<select aria-label="When an order goes over" data-rule="over_limit"><option value="ask" ${r.over_limit === "ask" ? "selected" : ""}>Ask me first</option><option value="block" ${r.over_limit === "block" ? "selected" : ""}>Don't allow</option></select>`)}</section><section class="rule-section"><h3>Swaps</h3>${row("Ask me before any product swap", `<input class="toggle" type="checkbox" aria-label="Ask me before any product swap" data-rule="ask_swap" ${r.ask_swap ? "checked" : ""}>`)}${row("Only swap to products with the same or fewer allergens", `<input class="toggle" type="checkbox" aria-label="Only swap to products with the same or fewer allergens" data-rule="same_allergens" ${r.same_allergens ? "checked" : ""}>`)}</section><section class="rule-section"><h3>Allergens</h3><div class="chips">${r.allergens
+    .filter((a) => a !== "peanuts")
+    .map((a) => `<span class="chip">No ${esc(a)} (whole kitchen)</span>`)
+    .join("")}</div>${
+    S.addAllergen
+      ? `<select id="new-allergen" aria-label="Choose allergen">${[
+          "milk",
+          "egg",
+          "fish",
+          "gluten",
+          "sesame",
+          "soy",
+          "celery",
+          "mustard",
+          "crustaceans",
+          "molluscs",
+          "sulphites",
+          "lupin",
+        ]
+          .filter((a) => !r.allergens.includes(a))
+          .map((a) => `<option>${a}</option>`)
+          .join("")}</select> ${btn("Add", "allergen-confirm", "secondary")}`
+      : btn("Add allergen", "allergen", "secondary")
+  }</section><section class="rule-section"><h3>Bigger changes</h3>${row("Ask me when an order grows by more than", `<div class="row"><span>€</span><input type="number" min="1" step=".01" aria-label="Ask me when an order grows by more than" data-rule="growth_limit" value="${r.growth_limit}"></div>`)}</section><section class="rule-section"><h3>Who can order</h3>${S.account.team.map((t) => `<div class="rule-row"><span>${esc(t.name)}<span class="tiny" style="display:block">${esc(t.role)}</span></span><span class="small muted">${esc(t.permission)}</span></div>`).join("")}</section><p class="small muted">These rules apply to every order from your account, including ones made by a connected AI.</p>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
 }
-async function change(action, value, expectedRun = null) {
-  if (expectedRun !== null && expectedRun !== storyRun)
-    throw new Error("STOP_STORY");
-  if (expectedRun === null && storyActive) stopStory();
-  if (busy || !order) return;
-  busy = true;
-  try {
-    const result = await api("/change", {
-      token: order.token,
-      action,
-      value,
-      photo_receipts: photoReceipts,
-    });
-    if (expectedRun !== null && expectedRun !== storyRun)
-      throw new Error("STOP_STORY");
-    render(result, false);
-  } catch (e) {
-    if (expectedRun !== null) throw e;
-    notice(e.message);
-  } finally {
-    busy = false;
-  }
+function connected() {
+  const last = S.account.events.find((e) => e.by === "Aurora Group assistant");
+  return `<h2>Connect your own AI assistant</h2><p class="muted" style="margin-top:12px">Use Claude, ChatGPT or your company's own assistant to order from Valio. It follows the same ordering rules as your team.</p><div class="copy-row"><input readonly aria-label="MCP address" value="${esc(S.account.mcp_url)}">${btn(icon("copy") + "Copy", "copy", "secondary")}</div><h3>Claude</h3><ol class="steps"><li>Open Settings → Connectors → Add custom connector.</li><li>Name it Valio Aimo and paste the MCP address above.</li><li>Connect, then ask for dishes, guests and a delivery day.</li></ol><h3>ChatGPT</h3><ol class="steps"><li>Open Settings → Apps and enable developer mode in advanced settings.</li><li>Create an app with the MCP address above and no authentication.</li><li>Add it to a chat and ask for your kitchen's order.</li></ol><h3>Connected</h3><div class="connected-row">Aurora Group assistant<span class="tiny" style="display:block">${last ? "Last used " + time(last.at) : "Ready to connect"}</span></div>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
 }
-function scrollToEl(el) {
-  el?.scrollIntoView({
-    behavior: reduced() ? "instant" : "smooth",
-    block: "start",
-  });
+function team() {
+  return `<h2>Team</h2><div style="height:20px"></div>${table(["Name", "Role", "Permission"], S.account.team.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(t.role)}</td><td>${esc(t.permission)}</td></tr>`).join(""))}`;
 }
-function openTell() {
-  if (storyActive) stopStory();
-  $("#tell-panel").hidden = false;
-  $("#tell-content").hidden = false;
-  $("#thinking").hidden = true;
-  $("#listening").hidden = true;
-  $("#tell-text").focus();
-}
-function thinking(text) {
-  $("#tell-panel").hidden = false;
-  $("#tell-content").hidden = true;
-  $("#listening").hidden = true;
-  $("#thinking").hidden = false;
-  $("#transcript").textContent = text;
-  ["read", "stock", "valio"].forEach((s) => {
-    $("#step-" + s).classList.remove("done");
-  });
-}
-function tick(step, label) {
-  let el = $("#step-" + step);
-  el.classList.add("done");
-  el.innerHTML = icon("check") + esc(label);
-}
-async function tell(text, media) {
-  if (storyActive) stopStory();
-  if (busy || !order) return;
-  busy = true;
-  clearNotice();
-  thinking(text || "Reading your recording…");
-  try {
-    const data = await api("/tell", {
-      token: order.token,
-      text,
-      media,
-      listened_tokens: listenedTokens,
-      photo_receipts: photoReceipts,
-    });
-    listenedTokens = [];
-    if (data.token && !data.rows) {
-      order.token = data.token;
-      order.evidence.calls = data.calls || order.evidence.calls;
-    }
-    if (data.reading?.status !== "readable") {
-      notice(
-        data.reading?.reason ||
-          "Couldn't read that. Here's what I saw: " +
-            (data.reading?.transcript || "No words."),
-      );
-      $("#transcript").textContent =
-        data.reading?.transcript || "No words were clear enough to read.";
-      $("#tell-content").hidden = false;
-      return;
-    }
-    $("#transcript").textContent = data.reading.transcript;
-    tick("read", "Read the wedding menu");
-    tick("stock", "Checked your stock");
-    tick(
-      "valio",
-      `Checked Valio availability for ${new Set(data.rows.map((r) => r.product_id)).size} products`,
-    );
-    render(data, true);
-    setTimeout(() => {
-      $("#tell-panel").hidden = true;
-    }, 1500);
-    setTimeout(() => {
-      let first = order.rows.find((r) => r.change);
-      if (first) scrollToEl($("#row-" + first.id));
-    }, 400);
-  } catch (e) {
-    notice(e.message);
-    $("#tell-content").hidden = false;
-  } finally {
-    busy = false;
-  }
-}
-function showConfirmation() {
-  let o = order;
-  $("#layout").hidden = true;
-  $("#result-summary").hidden = true;
-  $("#photo-panel").hidden = true;
-  $("#dock").hidden = true;
-  $("#tell-panel").hidden = true;
-  $("#intro").textContent = "Your kitchen sheet is signed off.";
-  $("#confirmation").hidden = false;
-  $("#confirmation").innerHTML =
-    `<h1>${icon("check")}Order placed</h1><div class="order-number">${esc(o.confirmation.order_number)}</div>${o.deliveries.map((d) => `<div class="delivery-receipt"><div><strong>${dayName(d.date)} delivery</strong><p>${d.rows.filter((r) => r.units > 0).length} products · ${d.cutoff && new Date(d.cutoff) > new Date() ? "Cut-off met" : "Cut-off not supplied for some products"}</p></div><strong>${money(d.subtotal)}</strong></div>`).join("")}<div class="receipt-total"><span>This week<br><span class="meta">of ${money(o.budget)} budget${o.total > o.budget ? ", approved this week" : ""}</span></span><strong>${money(o.total)}</strong></div><button class="text-button" data-decisions>How this was decided</button><p class="demo-note">${esc(o.confirmation.notice)}</p><p class="mcp-note">Buying with your own ordering agent? It connects to Valio directly over <a href="/mcp/">MCP</a>.</p><button class="outline" id="start-again" style="margin-top:24px">Back to the kitchen</button>`;
-  scrollToEl($("#confirmation"));
-}
-function showDecisions() {
-  $("#decision-panel").hidden = false;
-  let e = order.evidence;
-  $("#decision-panel").innerHTML =
-    `<div class="panel-title"><h2>How this was decided</h2><button class="icon-button" data-close="decision-panel" aria-label="Close decisions">×</button></div><p>${esc(e.fixture_note)}</p><h3>What the chef said</h3><p>${esc(order.wedding?.transcript || "Next week’s connected menu, stock and bookings.")}</p>${order.wedding?.read?.length ? `<h3>What we read</h3>${order.wedding.read.map((r) => `<p>${esc(r.word)}</p>`).join("")}` : ""}<h3>Your guardrails</h3><ul>${e.guardrails.map((r) => `<li>${esc(r)}</li>`).join("")}</ul><h3>Your OKs and changes</h3>${e.events.map((r) => `<p>${esc(r.at || "")} · ${esc(r.action)}${r.check ? " · " + esc(r.check) : ""}${r.text ? " · " + esc(r.text) : ""}${r.note ? " · " + esc(r.note) : ""}</p>`).join("") || "<p>Everything is within your kitchen rules.</p>"}<h3>Each choice, with its reason</h3>${e.decisions.map((d) => `<p><strong>${esc(order.rows.find((r) => r.product_id === d.product)?.name || d.product)}</strong><br>${esc(d.reason)}</p>`).join("")}<p class="meta">${esc(e.price_note)}</p><details><summary>Technical receipt · every supplier and understanding call</summary><p>Each Valio call carries your customer account and the requested delivery date. Cached responses are marked. No credentials are included.</p><details><summary>Open the supplier call record</summary><pre>${esc(JSON.stringify(e.calls, null, 2))}</pre><p>MCP for buyers with their own agents: <a href="/mcp/">${esc(location.origin)}/mcp/</a></p></details></details>`;
-  scrollToEl($("#decision-panel"));
-}
-// No endpoint names or raw receipts appear until the chef opens the technical receipt.
-document.addEventListener("click", async (ev) => {
-  let t = ev.target.closest("button,a");
-  if (!t) return;
-  if (t.dataset.close) {
-    $("#" + t.dataset.close).hidden = true;
-    return;
-  }
-  if (t.dataset.working) {
-    let id = t.dataset.working;
-    expanded.has(id) ? expanded.delete(id) : expanded.add(id);
-    $("#working-" + id).hidden = !expanded.has(id);
-    t.setAttribute("aria-expanded", expanded.has(id));
-    return;
-  }
-  if (t.dataset.step) {
-    if (t.dataset.repeated === "yes") {
-      t.dataset.repeated = "";
-      return;
-    }
-    let r = order.rows.find((r) => r.id === t.dataset.id);
-    await change("quantity", {
-      id: r.id,
-      units: r.units + Number(t.dataset.step),
-    });
-    return;
-  }
-  if (t.dataset.approve) {
-    await change("approve", t.dataset.approve);
-    return;
-  }
-  if (t.dataset.unapprove) {
-    await change("unapprove", t.dataset.unapprove);
-    return;
-  }
-  if (t.dataset.restore) {
-    await change("restore", t.dataset.restore);
-    return;
-  }
-  if (t.dataset.fix !== undefined) {
-    let c = order.checks.find(
-      (c) => c.row_ids[0] === t.dataset.fix && !c.can_approve,
-    );
-    if (c?.id.startsWith("short-") || c?.id.startsWith("stock-"))
-      await change("restore", t.dataset.fix);
-    else openTell();
-    return;
-  }
-  if (t.dataset.proof) {
-    ev.preventDefault();
-    expanded.add(t.dataset.proof);
-    $("#working-" + t.dataset.proof).hidden = false;
-    scrollToEl($("#row-" + t.dataset.proof));
-    return;
-  }
-  if (t.hasAttribute("data-decisions")) {
-    ev.preventDefault();
-    showDecisions();
-    return;
-  }
-  if (t.dataset.alternative) {
-    if (t.dataset.alternative === "pack") await change("small-cream");
-    else if (t.dataset.alternative === "budget") {
-      let r = [...order.rows].sort((a, b) => b.total - a.total)[0];
-      expanded.add(r.id);
-      $("#working-" + r.id).hidden = false;
-      scrollToEl($("#row-" + r.id));
-      notice(
-        `${r.name} is the costliest product, ${money(r.total)}. Reduce the menu in Tell Valio, or approve this week’s budget.`,
-      );
-    } else openTell();
-    return;
-  }
-  if (t.id === "only-changes") {
-    onlyChanges = !onlyChanges;
-    render(order);
-    t.textContent = onlyChanges ? "Show full order" : "Show only what changed";
-    return;
-  }
-  if (t.id === "undo-wedding" || t.hasAttribute("data-undo-menu")) {
-    onlyChanges = false;
-    $("#result-summary").hidden = true;
-    await change("undo-wedding");
-    return;
-  }
-  if (t.id === "start-again") {
-    location.reload();
-    return;
-  }
-  if (t.dataset.add) {
-    await change("add", t.dataset.add);
-    if (!$("#notice").hidden) return;
-    $("#search-panel").hidden = true;
-    return;
-  }
-});
-let repeatTimer = null,
-  repeatInterval = null;
-document.addEventListener("pointerdown", (ev) => {
-  let b = ev.target.closest("[data-step]");
-  if (!b || b.disabled) return;
-  repeatTimer = setTimeout(() => {
-    b.dataset.repeated = "yes";
-    repeatInterval = setInterval(() => {
-      let r = order.rows.find((r) => r.id === b.dataset.id);
-      if (r && r.units + Number(b.dataset.step) >= 0)
-        change("quantity", {
-          id: r.id,
-          units: r.units + Number(b.dataset.step),
-        });
-    }, 400);
-  }, 450);
-});
-for (const type of ["pointerup", "pointercancel"])
-  document.addEventListener(type, () => {
-    clearTimeout(repeatTimer);
-    clearInterval(repeatInterval);
-  });
-$("#keyboard").onclick = openTell;
-$("#close-tell").onclick = () => ($("#tell-panel").hidden = true);
-$("#example").onclick = () => {
-  $("#tell-text").value = "Wedding Saturday, 120 guests, salmon and lemon tart";
-  $("#tell-text").focus();
-};
-$("#tell-form").onsubmit = (ev) => {
-  ev.preventDefault();
-  if (!$("#tell-text").value.trim()) {
-    notice("Tell Valio what changed, or use the wedding menu.");
-    return;
-  }
-  tell($("#tell-text").value.trim());
-};
-$("#place").onclick = () => {
-  if (!order) return;
-  if (!order.can_place) {
-    scrollToEl($("#checks"));
-    return;
-  }
-  change("place");
-};
-$("#edit-budget").onclick = () => {
-  $("#budget-editor").hidden = false;
-  $("#budget-input").value = order.budget;
-  $("#budget-input").focus();
-};
-$("#budget-form").onsubmit = async (ev) => {
-  ev.preventDefault();
-  await change("budget", Number($("#budget-input").value));
-  $("#budget-editor").hidden = true;
-};
-$("#add-product").onclick = () => {
-  $("#search-panel").hidden = false;
-  $("#search-input").focus();
-};
-$("#search-form").onsubmit = async (ev) => {
-  ev.preventDefault();
-  let el = $("#search-results");
-  el.innerHTML = "<p>Looking in the Valio catalogue…</p>";
-  try {
-    let r = await fetch("/api/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: $("#search-input").value, limit: 8 }),
-    });
-    if (!r.ok) throw new Error();
-    let data = await r.json();
-    el.innerHTML = data.results.length
-      ? data.results
-          .filter(
-            (p) =>
-              !p.contains.includes("nuts") &&
-              !p.contains.includes("peanuts") &&
-              !p.may_contain.includes("nuts") &&
-              !p.may_contain.includes("peanuts"),
-          )
+function kitchenProfile() {
+  return `<h2>Hotel Aurora</h2><p class="muted" style="margin-top:12px">Helsinki · Customer HC-1001</p><p class="small muted" style="margin-top:16px">Hotel Aurora is a sample kitchen account. Its menus, recipes, bookings, stock and past quantities are account records. Product names, prices, availability and cut-offs come from Valio.</p><section class="card"><h3>Bookings</h3>${S.account.bookings.map((b) => `<div class="summary-row"><span>${date(b.date)}</span><span>${b.covers} guests</span></div>`).join("")}</section><section class="card"><h3>Recipes and menu</h3>${Object.entries(
+    S.account.recipes,
+  )
+    .map(
+      ([key, r]) =>
+        `<details style="margin-top:12px"><summary>${esc(r.name)}</summary>${Object.entries(
+          r.ingredients,
+        )
           .map(
-            (p) =>
-              `<div class="search-product"><strong>${esc(p.name_fi || p.name)}</strong><p class="meta">${p.pack ? n(p.pack) + " " + esc(p.pack_dim) : "Pack checked before adding"} · ${esc(p.contains.join(", ") || "No declared allergens")}</p><button data-add="${esc(p.id)}">Add to Friday</button></div>`,
+            ([name, amount]) =>
+              `<p class="small muted">${esc(name)} · ${amount} g/ml per guest</p>`,
+          )
+          .join("")}</details>`,
+    )
+    .join(
+      "",
+    )}</section><section class="card"><h3>Current stock</h3>${Object.entries(
+    S.account.stock,
+  )
+    .map(
+      ([name, n]) =>
+        `<div class="summary-row"><span>${esc(name.replace("_", " "))}</span><span>${n} kg/L</span></div>`,
+    )
+    .join("")}</section>`;
+}
+function events() {
+  return `<section class="popover events" aria-label="Account events"><h3>Account events</h3>${
+    S.account.events.length
+      ? S.account.events
+          .slice(0, 10)
+          .map(
+            (e) =>
+              `<div class="event">${esc(e.text)}<p class="small muted">${money(e.total)} · ${esc(e.note)}</p><span class="tiny">${date(e.at)} · ${time(e.at)}</span></div>`,
           )
           .join("")
-      : "<p>No products found. Try a Finnish product name.</p>";
-  } catch {
-    el.innerHTML = "<p>Could not reach the catalogue. Try again.</p>";
-  }
-};
-function bytes64(buffer) {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i += 8192)
-    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return btoa(binary);
+      : '<p class="muted" style="margin-top:12px">Orders and account changes will appear here.</p>'
+  }</section>`;
 }
-async function startRecording() {
-  if (storyActive) stopStory();
-  if (busy || recordingPending || recorder?.state === "recording") return;
-  releaseRequested = false;
-  recordingPending = true;
+function drawer() {
+  return S.drawer === "receipt"
+    ? receipt()
+    : `<aside class="drawer" role="complementary" aria-label="Ask Valio"><header class="drawer-header"><h3>Ask Valio</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close Ask Valio"')}</header><div class="drawer-body">${S.request ? `<div class="request-block">${esc(S.request)}<div class="tiny">${time(S.requestAt || new Date().toISOString())}</div></div>${S.order.reading ? understood() : ""}${S.working ? '<div class="working"><i class="spinner"></i>Working on your order…</div>' : S.question ? `<p class="muted">${esc(S.question)}</p>` : S.order.reading ? `<div class="ask-result"><p>${summary(S.order)} ${S.order.pending} things need your OK.</p><div style="margin-top:16px">${btn("Review order", "review", "primary")}</div></div>` : ""}` : `<p class="muted">Tell Valio what's changing in your kitchen. Dishes and guests are enough.</p><p class="example">“Conference lunch Tuesday, 60 guests, one vegan option”</p><p class="example">“We're closed on Thursday”</p>`}</div><form class="composer" id="ask-form"><label class="sr-only" for="ask-input">Tell Valio what's changing</label><textarea id="ask-input" rows="3" placeholder="Tell Valio what's changing…" ${S.working ? "disabled" : ""}>${esc(S.input)}</textarea>${S.mediaName ? `<p class="small muted" style="margin-top:8px">${esc(S.mediaName)} ${btn("Remove", "remove-file", "link")}</p>` : ""}${S.listening ? `<p class="small amber">Listening…</p><div class="meter"><i id="audio-level" style="width:${S.level}%"></i></div>` : ""}<div class="composer-actions">${btn(icon("paperclip") + "Add menu or photo", "attach", "attach", S.working ? "disabled" : "")}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="row" style="gap:8px">${btn(icon("mic"), "mic", `mic ${S.listening ? "listening" : ""}`, `aria-label="${S.listening ? "Stop recording" : "Start recording"}" ${S.working ? "disabled" : ""}`)}${btn("Send", "send", "primary", S.working || S.listening ? "disabled" : "")}</div></div></form></aside>`;
+}
+function understood() {
+  const r = S.order.reading;
+  return `<div class="between"><h3>What Valio understood</h3>${btn(S.editing ? "Done" : "Edit", "edit-reading", "link")}</div>${[
+    [
+      "Event",
+      (r.event || S.order.wedding?.event || "Wedding").replace(/^./, (c) =>
+        c.toUpperCase(),
+      ),
+    ],
+    ["Date", date(r.date || S.order.wedding?.date)],
+    ["Guests", r.covers],
+    [
+      "Dishes",
+      r.dishes
+        .map((d) => S.account.recipes[d.recipe]?.name || d.recipe)
+        .join(", "),
+    ],
+  ]
+    .map(
+      ([l, v]) =>
+        `<div class="field"><label>${l}</label>${S.editing ? `<input aria-label="${l}" data-reading-field="${l}" value="${esc(v)}">` : `<span>${esc(v)}</span>`}</div>`,
+    )
+    .join("")}`;
+}
+function receipt() {
+  const o = S.readOrder || S.order;
+  return `<aside class="drawer receipt" aria-label="How this was decided"><header class="drawer-header"><h3>How this was decided</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close receipt"')}</header><div class="drawer-body"><h3>Your request</h3><p>${esc(o.request || "Prepare next week’s order from our connected menu, bookings and current stock.")}</p><span class="tiny">${time(o.request_at || o.quote_at)}</span><h3>What Valio checked</h3>${o.evidence.calls.map((c, i) => `<div class="receipt-entry"><p>${esc(c.purpose || `${c.method === "CACHE" ? "Reused recent" : "Checked"} ${c.path || "Valio product data"}`)}${c.product_ids ? ` · ${c.product_ids.length} products for ${date(c.requested_date)}` : ""}</p><p class="tiny">${esc(c.source || "Valio product data")} · ${time(c.at)}${c.duration_ms !== undefined ? " · " + c.duration_ms + " ms" : ""}</p><details><summary><span style="color:var(--blue)">Details</span></summary><pre>${esc(JSON.stringify({ request: c.request || { method: c.method, path: c.path, customer: c.customer, products: c.product_ids, date: c.requested_date }, response: c.response || { status: c.status, source: c.source }, timing_ms: c.duration_ms }, null, 2))}</pre></details></div>`).join("")}<h3>Rules applied</h3><p>Weekly limit ${money(o.budget)} → ${o.checks.some((c) => c.id === "budget") ? "asked Sanna" : "within limit"}</p><p class="small muted">No ${esc(o.rules.allergens.join(", "))} → ${o.rows.length} products checked</p>${o.checks.map((c) => `<p class="small muted">${c.kind === "swap" ? "Ask before swap" : c.kind === "pack" ? "Larger pack" : c.kind === "budget" ? "Spend approval" : "Delivery check"} → ${c.approved ? "OK’d " + esc(c.approved_at) : "needs your OK"}</p>`).join("")}</div></aside>`;
+}
+function why() {
+  const o = S.readOrder || S.order;
+  const r = o.rows.find((r) => r.id === S.why);
+  if (!r) return "";
+  const a = r.allocations;
+  return `<div class="popover why-popover" role="dialog" aria-label="Why this product" style="right:${S.whyPos?.right || 24}px;top:${S.whyPos?.top || 160}px"><div class="between"><h3>Why this product</h3>${btn(icon("x"), "close-why", "icon-btn", 'aria-label="Close explanation"')}</div><p>${a.map((p) => `${esc(p.dish)} · ${p.covers} guests × ${p.per_cover} g/ml = ${p.amount.toFixed(2)} ${esc(r.unit)}.`).join(" ")} In stock: ${r.stock} ${esc(r.unit)}. Ordering ${r.units} × ${r.pack} ${esc(r.unit)} packs = ${r.ordered} ${esc(r.unit)}.</p><p class="small muted" style="margin-top:12px">${esc(r.reason)}</p><p class="tiny">Price ${money(r.comparison_price || r.unit_price)}/${esc(r.comparison_unit || r.unit)} and stock from Valio, checked ${time(o.quote_at)}.</p></div>`;
+}
+function invoice() {
+  const o = S.account.orders.find((o) => o.order_number === S.invoice);
+  return `<div class="popover" role="dialog" aria-label="Invoice" style="right:24px;top:120px;width:560px"><div class="between"><h3>Invoice · ${esc(o.order_number)}</h3>${btn(icon("x"), "close-invoice", "icon-btn", 'aria-label="Close invoice"')}</div><p class="muted">Hotel Aurora · ${date(o.placed_at)}</p><p style="margin-top:16px">Total ${money(o.total)}</p><p class="tiny">Sample account invoice. Past quantities valued with Valio customer prices, checked ${date(o.price_checked_at)}.</p><div style="margin-top:16px">${table(["Product", "Quantity", "Total"], o.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.units}</td><td class="money">${money(r.total)}</td></tr>`).join(""))}</div></div>`;
+}
+let catalogueRequest = 0;
+async function loadCatalogue(q = "") {
+  const request = ++catalogueRequest;
+  S.catalogueQuery = q;
+  S.busy = true;
+  S.error = "";
+  render();
   try {
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
-      throw new Error(
-        "Recording is unavailable in this browser. Type your change in Tell Valio.",
-      );
-    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    if (releaseRequested) {
-      audioStream.getTracks().forEach((t) => t.stop());
-      return;
-    }
-    let chunks = [],
-      partialBusy = false,
-      partialCount = 0;
-    listenedTokens = [];
-    let mime = ["audio/webm", "audio/mp4", "audio/ogg"].find((t) =>
-      MediaRecorder.isTypeSupported(t),
-    );
-    recorder = new MediaRecorder(
-      audioStream,
-      mime ? { mimeType: mime } : undefined,
-    );
-    recorder.ondataavailable = async (e) => {
-      if (e.data.size) chunks.push(e.data);
-      if (
-        recorder.state !== "recording" ||
-        partialBusy ||
-        partialCount >= 4 ||
-        chunks.length % 3 !== 0
-      )
-        return;
-      partialBusy = true;
-      partialCount++;
-      try {
-        const part = new Blob(chunks, { type: recorder.mimeType });
-        const result = await api("/listen", {
-          token: order.token,
-          media: {
-            mime: part.type.split(";")[0],
-            data: bytes64(await part.arrayBuffer()),
-          },
-        });
-        if (recorder.state === "recording") {
-          if (result.transcript)
-            $("#live-transcript").textContent = result.transcript;
-          listenedTokens.push(result.call_token);
-        }
-      } catch {
-        /* A partial recording can end mid-word. Final audio is checked on release. */
-      } finally {
-        partialBusy = false;
-      }
-    };
-    recorder.onstop = async () => {
-      audioStream.getTracks().forEach((t) => t.stop());
-      if (audioContext) {
-        audioContext.close();
-        audioContext = null;
-      }
-      let blob = new Blob(chunks, { type: recorder.mimeType });
-      if (blob.size < 500) {
-        notice("Didn't catch that. Hold and say it again, or type it.");
-        openTell();
-        return;
-      }
-      if (blob.size > 6000000) {
-        notice("Recording is too long. Say the change in one short sentence.");
-        return;
-      }
-      tell(null, {
-        mime: blob.type.split(";")[0],
-        data: bytes64(await blob.arrayBuffer()),
-      });
-    };
-    recorder.start(1000);
-    $("#live-transcript").textContent = "Listening… release to send";
-    $("#tell-panel").hidden = false;
-    $("#tell-content").hidden = true;
-    $("#thinking").hidden = true;
-    $("#listening").hidden = false;
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    let analyser = audioContext.createAnalyser();
-    audioContext.createMediaStreamSource(audioStream).connect(analyser);
-    let buf = new Uint8Array(analyser.fftSize);
-    function level() {
-      if (!audioContext || recorder.state !== "recording") return;
-      analyser.getByteTimeDomainData(buf);
-      let rms =
-        Math.sqrt(buf.reduce((a, x) => a + (x - 128) ** 2, 0) / buf.length) /
-        128;
-      $("#level").style.transform = `scaleX(${Math.min(1, 0.05 + rms * 5)})`;
-      requestAnimationFrame(level);
-    }
-    level();
+    const out = await api("/catalogue?q=" + encodeURIComponent(q));
+    if (request !== catalogueRequest) return;
+    S.catalogue = out.products;
+    S.catalogueLoaded = true;
   } catch (e) {
-    notice(
-      e.message ||
-        "Microphone permission was not granted. Type your change in Tell Valio.",
-    );
-    openTell();
+    S.error = e.message;
   } finally {
-    recordingPending = false;
+    S.busy = false;
+    render();
   }
 }
-function stopRecording() {
-  releaseRequested = true;
-  if (recorder?.state === "recording") recorder.stop();
+async function mutate(action, value) {
+  await task(async () => {
+    S.order = await api("/drafts/" + S.order.draft_id + "/change", {
+      action,
+      value,
+    });
+  });
 }
-$("#mic").addEventListener("pointerdown", (ev) => {
-  if (ev.button !== 0) return;
-  ev.preventDefault();
-  $("#mic").setPointerCapture(ev.pointerId);
-  startRecording();
-});
-$("#mic").addEventListener("pointerup", stopRecording);
-$("#mic").addEventListener("pointercancel", stopRecording);
-$("#mic").addEventListener("keydown", (ev) => {
-  if ([" ", "Enter"].includes(ev.key) && !ev.repeat) {
-    ev.preventDefault();
-    startRecording();
+async function send() {
+  if (S.working) return;
+  const oldTotal = S.order.total;
+  S.input = $("#ask-input")?.value || S.input;
+  if (!S.input.trim() && !S.media) return;
+  const text = S.question ? S.request + ". " + S.input.trim() : S.input.trim();
+  S.request = text || S.mediaName;
+  S.requestAt = new Date().toISOString();
+  S.input = "";
+  S.working = true;
+  S.question = "";
+  S.steps = [{ label: stageNames[0], done: false }];
+  if (S.path !== "/dashboard") {
+    S.path = "/dashboard";
+    history.pushState({}, "", "/dashboard");
   }
-});
-$("#mic").addEventListener("keyup", (ev) => {
-  if ([" ", "Enter"].includes(ev.key)) {
-    ev.preventDefault();
-    stopRecording();
+  render();
+  try {
+    if (S.order.status === "placed") {
+      S.order = await api("/drafts", {});
+      localStorage.setItem("aurora-draft", S.order.draft_id);
+    }
+    const r = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        draft_id: S.order.draft_id,
+        text,
+        media: S.media,
+      }),
+    });
+    if (!r.ok) {
+      const v = await r.json();
+      throw Error(v.error || "Could not update your order.");
+    }
+    const reader = r.body.getReader(),
+      decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let end;
+      while ((end = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, end);
+        buf = buf.slice(end + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const event = JSON.parse(chunk.slice(6));
+        if (event.type === "step") {
+          const i = [
+            "read",
+            "scaled",
+            "stock",
+            "packs",
+            "allergens",
+            "budget",
+          ].indexOf(event.stage);
+          if (i >= 0) {
+            S.steps[i] = {
+              ...S.steps[i],
+              label: S.steps[i]?.label || stageNames[i],
+              done: true,
+              result: event.result,
+              attention: event.attention,
+            };
+            if (i < 5)
+              S.steps[i + 1] = {
+                label:
+                  i === 0 && event.covers
+                    ? `Scaling to ${event.covers} guests`
+                    : stageNames[i + 1],
+                done: false,
+              };
+            render();
+          }
+        }
+        if (event.type === "error") throw Error(event.error);
+        if (event.type === "result") {
+          if (event.order.question) {
+            S.question = event.order.question;
+            S.input = text;
+          } else {
+            S.order = event.order;
+            S.filter = "changed";
+          }
+          S.media = null;
+          S.mediaName = "";
+          render();
+        }
+      }
+    }
+  } catch (e) {
+    S.error = e.message;
+  } finally {
+    S.working = false;
+    render();
+    const el = $("#animated-total");
+    if (el && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const start = performance.now(),
+        end = S.order.total;
+      function count(t) {
+        const p = Math.min(1, (t - start) / 400);
+        el.textContent = money(
+          oldTotal + (end - oldTotal) * (1 - Math.pow(1 - p, 3)),
+        );
+        if (p < 1) requestAnimationFrame(count);
+      }
+      requestAnimationFrame(count);
+    }
   }
-});
-$("#camera").onclick = () => {
-  if (!order) return;
-  $("#photo-file").click();
-};
-$("#photo-file").onchange = async () => {
-  if (storyActive) stopStory();
-  const readRun = ++photoReadRun;
-  let file = $("#photo-file").files[0];
-  if (!file) return;
-  if (file.size > 6000000) {
-    notice("Choose a photo smaller than 6 MB.");
+}
+let recorder, stream, audioCtx, analyser, levelFrame;
+async function microphone() {
+  if (S.listening) {
+    recorder.stop();
+    S.listening = false;
+    cancelAnimationFrame(levelFrame);
+    render();
     return;
   }
-  let data = bytes64(await file.arrayBuffer());
-  if (readRun !== photoReadRun) return;
-  photoSrc = "data:" + file.type + ";base64," + data;
-  $("#photo-panel").hidden = false;
-  $("#photo-panel").innerHTML =
-    "<h2>Reading the final menu…</h2><p>Your photo goes to Gemini. Your order stays unchanged until you check it.</p>";
-  scrollToEl($("#photo-panel"));
   try {
-    const requestToken = order.token;
-    let result = await api("/photo", {
-      token: requestToken,
-      media: { mime: file.type, data },
-    });
-    if (result.read_token) photoReceipts.push(result.read_token);
-    // A photo can finish after the chef changed the sheet. Never restore its older signed state.
-    if (result.token && order.token === requestToken) {
-      order.token = result.token;
-      order.evidence.calls = result.calls || order.evidence.calls;
-    } else if (result.call) order.evidence.calls.push(result.call);
-    if (readRun !== photoReadRun) return;
-    photo = result.reading;
-    readToken = result.read_token;
-    renderPhoto();
-  } catch (e) {
-    if (readRun !== photoReadRun) return;
-    $("#photo-panel").innerHTML =
-      `<h2>Couldn't read it</h2><p>${esc(e.message)}</p><button id="retry-photo" class="outline">Choose another photo</button>`;
-    $("#retry-photo").onclick = () => $("#photo-file").click();
-  } finally {
-    $("#photo-file").value = "";
-  }
-};
-const dishNames = {
-  salmon: "Salmon with dill potatoes",
-  soup: "Lohikeitto",
-  whitefish: "Paistettu siika",
-  tart: "Lemon tart",
-  cheeseboard: "Juustolautanen",
-};
-function renderPhoto() {
-  let good = photo.status === "readable",
-    correctable =
-      photo.status === "uncertain" &&
-      photo.dishes.length > 0 &&
-      Number.isInteger(photo.covers),
-    prior = order.wedding?.dishes || [];
-  let added = photo.dishes.filter(
-    (d) => !prior.some((p) => p.recipe === d.recipe),
-  );
-  let removed = prior.filter(
-    (d) => !photo.dishes.some((p) => p.recipe === d.recipe),
-  );
-  $("#photo-panel").hidden = false;
-  $("#photo-panel").innerHTML =
-    `<div class="photo-heading"><h2>${good ? "Check the final menu" : "Couldn't read it"}</h2><button class="icon-button" data-close="photo-panel" aria-label="Close photo">×</button></div><div class="photo-grid"><div class="photo-image"><img src="${photoSrc}" alt="Chef's final wedding menu on a whiteboard"><div id="photo-outline" class="photo-outline" hidden></div></div><div class="photo-reading"><h3>What we read</h3>${
-      good || correctable
-        ? `${removed.map((d) => `<p>Removed: ${esc(dishNames[d.recipe])}</p>`).join("")}${photo.dishes
-            .map((d, i) => {
-              let old = prior.find((p) => p.recipe === d.recipe);
-              let word = !old
-                ? "Added"
-                : old.covers < d.covers
-                  ? "More"
-                  : old.covers > d.covers
-                    ? "Less"
-                    : "Menu";
-              return `<label class="dish-edit"><span>${word}:</span><select data-dish="${i}" aria-label="Dish ${i + 1}">${Object.entries(
-                dishNames,
-              )
-                .map(
-                  ([k, v]) =>
-                    `<option value="${k}" ${d.recipe === k ? "selected" : ""}>${esc(v)}</option>`,
-                )
-                .join(
-                  "",
-                )}</select><input type="number" data-covers="${i}" min="1" max="1000" value="${d.covers}" aria-label="Portions of ${esc(dishNames[d.recipe])}"></label>`;
-            })
-            .join("")}`
-        : `<p>${esc(photo.reason)}</p>`
-    }${photo.read.map((r, i) => `<button class="read-word${r.uncertain ? " uncertain" : ""}" data-word="${i}"><span>${esc(r.word)}</span>${r.uncertain ? '<span class="meta">Check this word</span>' : ""}</button>`).join("")}<p class="meta">${good ? "Check the dish and portion count in place. Tap handwriting to see it on the photo." : "Here’s what I saw: " + esc(photo.transcript || "No legible words. No changes have been made to your order.")}</p></div></div>${correctable ? `<label class="confirm-words"><input type="checkbox" id="confirm-words"> I checked the dishes and portions against this photo.</label>` : ""}<div class="photo-actions"><button class="outline" id="retry-photo">Choose another photo</button><button class="solid" id="apply-photo" ${good ? "" : "disabled"}>Update order</button></div>`;
-  $("#retry-photo").onclick = () => $("#photo-file").click();
-  if ($("#confirm-words"))
-    $("#confirm-words").onchange = () => {
-      const checked = $("#confirm-words").checked;
-      $("#apply-photo").disabled = !checked;
-      if (checked) {
-        photo.status = "readable";
-        photo.uncertain = [];
-        photo.read.forEach((r) => (r.uncertain = false));
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new AudioContext();
+    analyser = audioCtx.createAnalyser();
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    analyser.fftSize = 256;
+    let chunks = [];
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      audioCtx.close();
+      const blob = new Blob(chunks, { type: recorder.mimeType });
+      try {
+        const data = await asBase64(blob);
+        S.busy = true;
+        render();
+        const out = await api("/transcribe", {
+          media: { mime: blob.type.split(";")[0], data },
+        });
+        S.input = out.transcript;
+      } catch (e) {
+        S.error = e.message;
+      } finally {
+        S.busy = false;
+        render();
       }
     };
-  $$("[data-word]").forEach(
-    (b) => (b.onclick = () => highlightWord(Number(b.dataset.word))),
-  );
-  $$("[data-dish]").forEach(
-    (el) =>
-      (el.onchange = () => {
-        photo.dishes[Number(el.dataset.dish)].recipe = el.value;
-      }),
-  );
-  $$("[data-covers]").forEach(
-    (el) =>
-      (el.oninput = () => {
-        photo.dishes[Number(el.dataset.covers)].covers = Number(el.value);
-      }),
-  );
-  $("#apply-photo").onclick = () => applyPhoto();
-}
-function highlightWord(index) {
-  let box = photo.read[index].box,
-    img = $(".photo-image img"),
-    frame = img.parentElement,
-    outline = $("#photo-outline");
-  let rect = img.getBoundingClientRect(),
-    ratio = Math.min(
-      rect.width / img.naturalWidth,
-      rect.height / img.naturalHeight,
-    ),
-    w = img.naturalWidth * ratio,
-    h = img.naturalHeight * ratio;
-  outline.hidden = false;
-  outline.style.left = (rect.width - w) / 2 + (box[1] / 1000) * w + "px";
-  outline.style.top = (rect.height - h) / 2 + (box[0] / 1000) * h + "px";
-  outline.style.width = ((box[3] - box[1]) / 1000) * w + "px";
-  outline.style.height = ((box[2] - box[0]) / 1000) * h + "px";
-}
-async function applyPhoto(expectedRun = null) {
-  if (expectedRun !== null && expectedRun !== storyRun)
-    throw new Error("STOP_STORY");
-  if (expectedRun === null && storyActive) stopStory();
-  if (busy) return;
-  busy = true;
-  try {
-    let updated = await api("/photo/apply", {
-      token: order.token,
-      read_token: readToken,
-      reading: photo,
-      photo_receipts: photoReceipts,
-      confirmed: !!$("#confirm-words")?.checked,
-    });
-    if (expectedRun !== null && expectedRun !== storyRun)
-      throw new Error("STOP_STORY");
-    $("#photo-panel").hidden = true;
-    render(updated, true);
-    scrollToEl($("#main"));
+    recorder.start();
+    S.listening = true;
+    render();
+    function meter() {
+      if (!S.listening) return;
+      const a = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(a);
+      S.level = Math.min(100, (a.reduce((s, v) => s + v, 0) / a.length) * 2);
+      const el = $("#audio-level");
+      if (el) el.style.width = S.level + "%";
+      levelFrame = requestAnimationFrame(meter);
+    }
+    meter();
   } catch (e) {
-    if (expectedRun !== null) throw e;
-    notice(e.message);
-  } finally {
-    busy = false;
+    S.error =
+      "Microphone access was not available. Check your browser permission or type your request.";
+    render();
   }
 }
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function playStory() {
-  if (busy || !order || storyActive) return;
-  storyActive = true;
-  const run = ++storyRun;
-  const current = () => {
-    if (run !== storyRun) throw new Error("STOP_STORY");
-  };
-  $("#story-strip").hidden = false;
-  $("#play").disabled = true;
-  const beat = async (text, ms) => {
-    current();
-    $("#story-caption").textContent = text;
-    await delay(ms);
-    if (run !== storyRun) throw new Error("STOP_STORY");
-  };
-  try {
-    await beat(
-      "Friday. The weekly order is ready, with every quantity worked out.",
-      5000,
-    );
-    const reading = await api("/story-reading");
-    current();
-    if (!reading.ready)
-      throw new Error(
-        "The recorded story is not ready. Use Tell Valio to run the wedding live.",
-      );
-    thinking("Wedding Saturday, 120 guests, salmon and lemon tart");
-    await beat("The wedding call. Tell Valio what changed.", 5000);
-    tick("read", "Read the wedding menu");
-    await delay(600);
-    current();
-    tick("stock", "Checked your stock");
-    let updated = await api("/story-wedding", {
-      token: order.token,
-      wedding_token: reading.wedding_token,
-    });
-    current();
-    tick("valio", "Checked Valio prices and availability");
-    render(updated, true);
-    await beat(
-      "Added the wedding. The sheet shows the stock, pack rounding and budget.",
-      8500,
-    );
-    $("#tell-panel").hidden = true;
-    scrollToEl($("#checks"));
-    for (const id of ["swap", "pack", "budget"]) {
-      if (order.checks.some((c) => c.id === id && !c.approved)) {
-        await beat(
-          id === "swap"
-            ? "Check the fish: same cooking method and no new allergens."
-            : id === "pack"
-              ? "Check the cream: larger pack, lower price per litre, booked recipes."
-              : "Check the budget. This OK applies to this week only.",
-          6500,
-        );
-        await change("approve", id, run);
-        current();
-      }
-    }
-    let cream = order.rows.find(
-      (r) =>
-        r.role === "cream" &&
-        order.checks.find((c) => c.id === "pack")?.row_ids.includes(r.id),
-    );
-    if (cream) {
-      await beat(
-        "One extra cream pack changes the approval. The order locks again.",
-        5000,
-      );
-      await change("quantity", { id: cream.id, units: cream.units + 1 }, run);
-      current();
-      scrollToEl($("#checks"));
-      await delay(4000);
-      current();
-      for (const c of [...order.checks]) {
-        if (!c.approved && c.can_approve) await change("approve", c.id, run);
-      }
-    }
-    await beat("The chef photographs the final wedding menu.", 4500);
-    photo = structuredClone(reading.photo);
-    readToken = reading.read_token;
-    photoSrc = "/whiteboards/menu-1.jpg";
-    renderPhoto();
-    scrollToEl($("#photo-panel"));
-    await beat(
-      "What we read: whitefish, lemon tart and a cheese board. Check before updating.",
-      8000,
-    );
-    await applyPhoto(run);
-    current();
-    await beat(
-      "The final menu updates the order. Check the new total before placing.",
-      6000,
-    );
-    for (const c of [...order.checks])
-      if (!c.approved && c.can_approve) await change("approve", c.id, run);
-    if (order.can_place) {
-      await beat("All checked. Place the order.", 5000);
-      await change("place", undefined, run);
-      current();
-      await beat(
-        "Order placed. The signed sheet keeps every reason and every OK.",
-        5000,
-      );
-    } else
-      throw new Error(
-        "Supply changed. Check the order before continuing the story.",
-      );
-  } catch (e) {
-    if (e.message !== "STOP_STORY") notice(e.message);
-  } finally {
-    if (run === storyRun) {
-      storyActive = false;
-      $("#play").disabled = false;
-    }
+function asBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+document.addEventListener("click", async (e) => {
+  const link = e.target.closest("[data-nav]");
+  if (link) {
+    e.preventDefault();
+    navigate(link.dataset.nav);
+    return;
   }
-}
-$("#play").onclick = playStory;
-function stopStory() {
-  storyRun++;
-  storyActive = false;
-  $("#story-caption").textContent =
-    "Story stopped. You can keep checking the order.";
-  $("#play").disabled = false;
-  $("#tell-panel").hidden = true;
-}
-$("#stop-story").onclick = stopStory;
-document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape") {
-    for (const s of ["#tell-panel", "#search-panel", "#budget-editor"])
-      $(s).hidden = true;
-    stopRecording();
+  const open = e.target.closest("[data-open-order]");
+  if (open) {
+    e.preventDefault();
+    const id = open.dataset.openOrder;
+    if (id === "Week 47") {
+      navigate("/orders/week-47");
+      return;
+    }
+    const order = S.account.orders.find((o) => o.order_number === id);
+    if (order?.draft_id) {
+      await task(async () => {
+        S.readOrder = await api("/drafts/" + order.draft_id);
+        S.path = "/orders/" + id;
+        history.pushState({}, "", S.path);
+      });
+    } else if (order) {
+      S.readOrder = {
+        ...order,
+        checks: [],
+        rules: S.account.rules,
+        evidence: { calls: [] },
+        budget: S.account.rules.weekly_limit,
+        request: "Account past order",
+        quote_at: order.price_checked_at,
+      };
+      S.path = "/orders/" + id;
+      history.pushState({}, "", S.path);
+      render();
+    }
+    return;
+  }
+  const b = e.target.closest("[data-action]");
+  if (!b) return;
+  const action = b.dataset.action;
+  const value = b.dataset.value;
+  if (["company", "account-menu", "menu", "allergen"].includes(action)) {
+    if (action === "company") S.notice = "company";
+    if (action === "account-menu") S.accountMenu = !S.accountMenu;
+    if (action === "menu") S.menu = !S.menu;
+    if (action === "allergen") S.addAllergen = true;
+    render();
+    return;
+  }
+  if (action === "login") {
+    await task(async () => {
+      await api("/login", {});
+      S.account = await api("/account");
+      await ensureDraft();
+      navigate("/dashboard");
+    });
+    return;
+  }
+  if (action === "logout") {
+    await task(async () => {
+      await api("/logout", {});
+      S.path = "/";
+      history.pushState({}, "", "/");
+      S.account = null;
+      S.order = null;
+    });
+    return;
+  }
+  if (action === "ask") {
+    S.drawer = "ask";
+    S.bell = false;
+    render();
+    $("#ask-input")?.focus();
+    return;
+  }
+  if (action === "close-drawer") {
+    if (S.listening) await microphone();
+    S.input = $("#ask-input")?.value || S.input;
+    S.drawer = null;
+    render();
+    return;
+  }
+  if (action === "review") {
+    S.drawer = null;
+    navigate("/orders/week-47");
+    return;
+  }
+  if (action === "receipt") {
+    S.drawer = "receipt";
+    render();
+    return;
+  }
+  if (action === "bell") {
+    S.bell = !S.bell;
+    if (S.bell) {
+      await refreshAccount();
+      localStorage.setItem(
+        "aurora-read",
+        JSON.stringify(S.account.events.map((e) => e.id)),
+      );
+    }
+    render();
+    return;
+  }
+  if (action === "filter") {
+    S.filter = value;
+    render();
+    return;
+  }
+  if (action === "order-tab") {
+    S.tab = value;
+    render();
+    return;
+  }
+  if (action === "orders") {
+    S.tab = "Placed";
+    navigate("/orders");
+    return;
+  }
+  if (action === "dashboard") {
+    navigate("/dashboard");
+    return;
+  }
+  if (action === "why") {
+    S.why = value;
+    const rect = b.getBoundingClientRect();
+    S.whyPos = {
+      right: Math.max(16, window.innerWidth - rect.right),
+      top: Math.max(80, Math.min(window.innerHeight - 350, rect.bottom + 8)),
+    };
+    render();
+    return;
+  }
+  if (action === "close-why") {
+    S.why = null;
+    render();
+    return;
+  }
+  if (action === "invoice") {
+    S.invoice = value;
+    render();
+    return;
+  }
+  if (action === "close-invoice") {
+    S.invoice = null;
+    render();
+    return;
+  }
+  if (action === "qty") {
+    await mutate("quantity", {
+      id: b.dataset.rowId,
+      units: Number(b.dataset.units),
+    });
+    return;
+  }
+  if (["approve", "unapprove", "restore"].includes(action)) {
+    await mutate(action, value);
+    return;
+  }
+  if (["small-cream", "keep-original"].includes(action)) {
+    await mutate(action);
+    return;
+  }
+  if (action === "change-order") {
+    S.filter = "all";
+    render();
+    document
+      .querySelector(".delivery-section")
+      ?.scrollIntoView({ behavior: "smooth" });
+    return;
+  }
+  if (action === "place") {
+    await task(async () => {
+      S.order = await api("/drafts/" + S.order.draft_id + "/place", {});
+      S.drawer = null;
+      navigate("/orders/confirmation");
+    });
+    return;
+  }
+  if (action === "search") {
+    e.preventDefault();
+    loadCatalogue($("#catalogue-search input").value);
+    return;
+  }
+  if (action === "add") {
+    if (S.order.status === "placed") {
+      S.order = await api("/drafts", {});
+      localStorage.setItem("aurora-draft", S.order.draft_id);
+    }
+    await mutate("add", value);
+    S.notice = "Added to next week’s order.";
+    render();
+    return;
+  }
+  if (action === "copy") {
+    try {
+      await navigator.clipboard.writeText(S.account.mcp_url);
+      S.notice = "MCP address copied.";
+    } catch {
+      S.notice = "Select and copy the MCP address above.";
+    }
+    render();
+    return;
+  }
+  if (action === "allergen-confirm") {
+    const a = $("#new-allergen").value;
+    await task(async () => {
+      S.account.rules = await api("/rules", {
+        allergens: [...S.account.rules.allergens, a],
+      });
+      S.order = await api("/drafts/" + S.order.draft_id);
+      S.addAllergen = false;
+      S.notice = "Rules saved.";
+    });
+    return;
+  }
+  if (action === "edit-reading") {
+    if (S.editing) {
+      const fields = Object.fromEntries(
+        [...document.querySelectorAll("[data-reading-field]")].map((el) => [
+          el.dataset.readingField,
+          el.value,
+        ]),
+      );
+      S.input = `${fields.Event} on ${fields.Date}, ${fields.Guests} guests. ${fields.Dishes}.`;
+      S.editing = false;
+      render();
+      $("#ask-input").value = S.input;
+      await send();
+    } else {
+      S.editing = true;
+      render();
+    }
+    return;
+  }
+  if (action === "attach") {
+    $("#photo-file").click();
+    return;
+  }
+  if (action === "remove-file") {
+    S.media = null;
+    S.mediaName = "";
+    render();
+    return;
+  }
+  if (action === "mic") {
+    await microphone();
+    return;
+  }
+  if (action === "send") {
+    e.preventDefault();
+    await send();
   }
 });
-setInterval(() => {
-  if (order)
-    $$(".cutoff").forEach((el) => {
-      const d = order.deliveries.find((d) => d.date === el.dataset.date);
-      if (d) el.innerHTML = cutoff(d);
-    });
-}, 60000);
-(async () => {
-  try {
-    render(await api(""));
-  } catch (e) {
-    $("#sheet").innerHTML =
-      `<div style="padding:24px"><h2>Your order is waiting for Valio</h2><p style="margin:12px 0">${esc(e.message)}</p><button class="outline" onclick="location.reload()">Try again</button></div>`;
-    $("#checks").innerHTML =
-      '<div class="all-clear">The order stays on hold until prices are confirmed.</div>';
-    $("#place").textContent = "Waiting for Valio";
+document.addEventListener("submit", (e) => {
+  if (e.target.id === "ask-form") {
+    e.preventDefault();
+    send();
   }
-})();
+  if (e.target.id === "catalogue-search") {
+    e.preventDefault();
+    loadCatalogue(e.target.q.value);
+  }
+});
+document.addEventListener("input", (e) => {
+  if (e.target.id === "ask-input") S.input = e.target.value;
+  if (e.target.matches("#catalogue-search input"))
+    S.catalogueQuery = e.target.value;
+});
+document.addEventListener("change", async (e) => {
+  if (e.target.id === "photo-file") {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 6000000) {
+      S.error = "Choose a photo smaller than 6 MB.";
+      render();
+      return;
+    }
+    S.media = { mime: f.type, data: await asBase64(f) };
+    S.mediaName = f.name;
+    render();
+    return;
+  }
+  if (e.target.dataset.rule) {
+    const key = e.target.dataset.rule;
+    const value =
+      e.target.type === "checkbox"
+        ? e.target.checked
+        : e.target.type === "number"
+          ? Number(e.target.value)
+          : e.target.value;
+    await task(async () => {
+      S.account.rules = await api("/rules", { [key]: value });
+      if (S.order.status === "draft")
+        S.order = await api("/drafts/" + S.order.draft_id);
+      S.notice = "Rules saved.";
+    });
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    S.drawer = null;
+    S.why = null;
+    S.invoice = null;
+    S.bell = false;
+    S.menu = false;
+    render();
+  }
+  if (
+    e.key === "/" &&
+    !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) &&
+    S.account
+  ) {
+    e.preventDefault();
+    S.drawer = "ask";
+    render();
+    $("#ask-input")?.focus();
+  }
+  if (e.key === "Enter" && e.target.matches("tr[data-open-order]"))
+    e.target.click();
+});
+window.addEventListener("popstate", () => {
+  S.path = location.pathname;
+  S.readOrder = null;
+  render();
+});
+setInterval(() => {
+  if (
+    S.account &&
+    !S.working &&
+    !S.busy &&
+    document.visibilityState === "visible"
+  )
+    refreshAccount();
+}, 30000);
+boot();
