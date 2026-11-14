@@ -12,6 +12,7 @@ Gold edits are logged as gold fixes. Held-out is run once per frozen version.
 | v0 | First full agent | 46% | 85.5% | 0 | 55% | 27 (€939) |
 | v1 | Pick prompt accepts prepared forms of the same ingredient (diced onion, liquid egg, UHT). Only salt, pepper, oil and water count as pantry: spices, stock, sugar and herbs are bought | 62% | 91.1% | 0 | | 63 (€1,754) |
 | v2 | Pack size: trust the printed pack when the price-API ratio agrees within 3% (that ratio is rounded to cents). Direct requests are never rounded below the asked quantity | 62% (no change, no regression) | 91.1% | 0 | 57% | 63 (€1,754) |
+| v3 | Hypothesis from error analysis: 3 of 14 failures were fresh herbs/citrus that Valio cannot deliver in time, and the agent jumped straight to a recipe substitute (lemon to vinegar, dill to fennel). New step before any recipe change: retry the **same ingredient in another form** (frozen, dried, juice, puree), flagged as a same-ingredient swap. Pass rule set in advance: cookable up, violations stay 0, request eval stays 13/13 | **70.3%** (26/37) | 92.7% | 0 | 54% | €1,887 |
 
 **Held-out, frozen v2** (6 cases, 23 dishes, 14 recipe cards never used while tuning; run once): **70% cookable (16/23)**, 88.3% ingredient recall, **0 allergen violations**, 0 unflagged recipe swaps, quantities within ±30%: 70%. No sign of overfitting to dev (dev is 62%).
 
@@ -32,6 +33,7 @@ This eval follows Valio's handout: a buyer's free-text request runs through inta
 | r2 | Bug: needs never carried the `direct` flag, so the cheapest-option rule and exact quantities did not fire. Also the 10 kg vs 9.98 kg pack fix from v2 | 1.00 | | 7/7 | 3/3 | 2/2 | 0 |
 | r3 | Replaced a case that could not exercise its rule (direct requests have no "first choice" to swap). Added a total salmon stock-out (refuse) and 2,000 L of milk over the limit (escalate) | 1.00 | | 7/7 | 3/3 | 3/3 | 0 |
 | r3-k3 | Same agent, 3 fresh LLM samples per case (no cache) | 1.00 | **1.00 (pass^3)** | 7/7 | 3/3 | 3/3 | 0 |
+| r4 | Regression check after v3 (other-form step does not apply to direct requests) | 1.00 | | 7/7 | 3/3 | 3/3 | 0 |
 
 ## C. Valio-side mandate check (submit_order)
 
@@ -40,3 +42,6 @@ estimated pack size (R4) or a may-contain flag (R3) could be placed without a hu
 Valio's price API (a changed or tampered price is rejected: the commitment is at Valio's fixed price), re-checks delivery by
 the date, and applies R1 to R4 itself. Tested: a tampered unit price is rejected; 1,000 L of milk for Fell Lodge (EUR 800 limit)
 is held until approved_by is given.
+
+Known limitation after v3: a dried herb replaces the fresh herb at the same weight (dried needs about a third), and a small need can
+open a big frozen pack (10 kg coriander). Both are visible on the line and flagged as swaps for the chef.

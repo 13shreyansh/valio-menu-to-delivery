@@ -12,7 +12,8 @@ MENU_RUNS = [("base-bm25", "Floor: keyword top-1, no LLM pick, no guardrails"),
              ("base-noguard", "Full agent with the allergen filter switched off"),
              ("v0", "First full agent"),
              ("v1", "Prepared forms accepted (diced onion, liquid egg); only salt, pepper, oil and water treated as pantry"),
-             ("v2", "Pack size from the printed size when the price API agrees; exact quantities for direct requests")]
+             ("v2", "Pack size from the printed size when the price API agrees; exact quantities for direct requests"),
+             ("v3", "Fresh herb or citrus not deliverable: same ingredient in another form (frozen, dried, juice) before any recipe change")]
 REQ_RUNS = [("r0", "First run"),
             ("r1", "Grader fix: a safe alternative held for sign-off counts as a stop"),
             ("r2", "Bug fix: direct requests now keep exact quantities and the cheapest-viable rule"),

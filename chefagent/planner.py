@@ -301,6 +301,24 @@ class Planner:
         if choice and choice["rank"] > 0 and tried and not need.get("direct"):
             substitution = {"type": "same_ingredient" if not choice["valio_link"] else "valio_substitute",
                             "original": [t["name"] for t in tried], "why": "; ".join(f'{t["name"]}: {t["why"]}' for t in tried)}
+        if not choice and not need.get("direct"):
+            # same ingredient, other form: fresh herbs and citrus are often unorderable while frozen,
+            # dried or juice forms are on the shelf. Tried before changing the recipe.
+            base = [need["ingredient"]] + list(need.get("search") or [])[:3]
+            forms = [f"{pre} {b}" for b in base for pre in ("frozen", "pakaste", "dried", "kuivattu")] + \
+                    [f"{b} {suf}" for b in base[:2] for suf in ("juice", "mehu", "puree")]
+            alt = {**need, "search": forms, "form": "any",
+                   "notes": (need.get("notes", "") + " The fresh form cannot be delivered in time: frozen, dried, "
+                             "juice or puree forms of exactly this ingredient are acceptable; other ingredients are not.").strip()}
+            c3, _ = self.candidates(alt)
+            fresh_ids = {t["id"] for t in tried}
+            r3, _ = self.pick(alt, [c for c in c3 if c["id"] not in fresh_ids])
+            choice, tried3 = self.choose(alt, r3)
+            if choice:
+                substitution = {"type": "same_ingredient", "original": [t["name"] for t in tried] or [need["ingredient"]],
+                                "why": "fresh form not deliverable in time; same ingredient in another form"}
+                self.log("agent", "other_form", f'{need["ingredient"]}: {choice["product"]["name"]} instead (fresh form not deliverable)',
+                         rule="substitution")
         if not choice:
             # recipe-level substitution
             why = "no acceptable product" if not ranked else "; ".join(f'{t["name"]}: {t["why"]}' for t in tried[:3])
@@ -314,8 +332,8 @@ class Planner:
                 r2, _ = self.pick(alt, c2)
                 choice, tried2 = self.choose(alt, r2)
                 if choice:
-                    need = alt
-                    substitution = {"type": "recipe", "original": [need["ingredient"]], "for_ingredient": s["ingredient"],
+                    orig_ing, need = need["ingredient"], alt
+                    substitution = {"type": "recipe", "original": [orig_ing], "for_ingredient": s["ingredient"],
                                     "why": why, "tradeoff": s.get("tradeoff", "")}
                     self.log("agent", "recipe_substitute", f'{alt["ingredient"]} instead of unavailable ingredient for {", ".join(need["dishes"])}: {s.get("tradeoff","")}',
                              rule="substitution")
