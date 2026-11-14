@@ -85,6 +85,22 @@ async def substitutes(req: Request):
     return service.find_substitutes(b["product_id"], b["delivery_date"], b.get("diet"), b.get("customer", "HC-1001"))
 
 
+@app.api_route("/api/request", methods=["GET", "POST"])
+async def request_order(req: Request, text: str = "", customer: str = "HC-1001"):
+    """One call, plain language in, draft order out (same as the MCP tool request_order).
+    GET /api/request?text=I+need+1000+litres+of+lactose-free+milk+by+Monday&customer=HC-1001"""
+    if req.method == "POST":
+        b = await req.json()
+        text, customer = b.get("text", ""), b.get("customer", customer)
+    parsed = parse_request(text)
+    services = parsed.get("services", [])
+    if sum(len(s.get("items", [])) for s in services) > 12:
+        return JSONResponse({"error": "Demo limit: at most 12 lines per request."}, status_code=400)
+    order = service.plan_menu_order(services, customer)
+    order["parsed_request"] = parsed
+    return order
+
+
 @app.get("/api/health")
 def health(deep: int = 0):
     """Liveness. deep=1 also loads the catalogue and prices one product through Valio's API."""
