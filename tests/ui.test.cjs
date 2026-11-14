@@ -585,3 +585,33 @@ test("a photo event name with its weekday does not repeat the day in summaries",
   assert.ok(!/Saturday saturday/i.test(text));
   dom.window.close();
 });
+test("Recent orders never presents the placement date as a completed delivery", () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.path = "/dashboard";
+  w.hooks.state.account.orders = [
+    {
+      order_number: "A",
+      placed_by: "Sanna Virtanen",
+      placed_at: "2026-11-14T12:00:00Z",
+      deliveries: [{ date: "2026-11-16" }],
+      products: 8,
+      total: 1,
+      status: "Placed",
+    },
+    {
+      order_number: "B",
+      placed_by: "Mikko Lahti",
+      placed_at: "2026-11-09T12:00:00Z",
+      deliveries: [{ date: "2026-11-13" }],
+      products: 8,
+      total: 1,
+      status: "Delivered",
+    },
+  ];
+  w.hooks.render();
+  const rows = w.document.querySelectorAll(".recent tbody tr");
+  assert.equal(rows[0].children[2].textContent, "Not delivered");
+  assert.equal(rows[1].children[2].textContent, "Fri 13 Nov");
+  dom.window.close();
+});
