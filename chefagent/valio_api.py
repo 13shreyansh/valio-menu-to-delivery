@@ -35,24 +35,17 @@ class Disruptions:
 
 
 def _future_or_none(ts):
-    """The mock API returns some order cut-offs that are already in the past. Showing 'order by Thursday'
-    for a Monday delivery would mislead a chef, so a past cut-off is dropped (and logged nowhere as a rule)."""
-    if not ts:
-        return None
-    try:
-        import datetime as _dt
-        t = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        now = _dt.datetime.now(t.tzinfo) if t.tzinfo else _dt.datetime.now()
-        return ts if t > now else None
-    except ValueError:
-        return ts
+    """Preserve the supplier's cut-off, including passed ones. Callers must stop late orders."""
+    return ts
 
 
 class ValioAPI:
-    def __init__(self, customer="HC-1001", disruptions: Disruptions | None = None, offline=False):
+    def __init__(self, customer="HC-1001", disruptions: Disruptions | None = None, offline=False, fresh=False):
         self.customer = customer
         self.disruptions = disruptions or Disruptions()
         self.offline = offline
+        self.fresh = fresh
+        self.audit = []
         self.calls = 0
         self.queried = {}  # path -> set of product ids looked up (cached or live)
         self._cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
@@ -67,9 +60,10 @@ class ValioAPI:
         self.queried.setdefault(path, set()).update(ids)
         out, missing = {}, []
         for pid in ids:
-            k = f"{path}|{date}|{pid}"
-            if k in self._cache:
-                out[pid] = self._cache[k]
+            k = f"{self.customer}|{path}|{date}|{pid}"
+            entry = self._cache.get(k)
+            if entry and not self.fresh and (self.offline or time.time() - entry.get('at', 0) < 120):
+                out[pid] = entry['row']
             else:
                 missing.append(pid)
         if missing and not self.offline:
@@ -86,10 +80,17 @@ class ValioAPI:
                         if attempt == 3: raise
                         time.sleep(2 * (attempt + 1))
                 self.calls += 1
+                self.audit.append({'method': 'POST', 'path': path, 'customer': self.customer,
+                                   'requested_date': date, 'product_ids': chunk,
+                                   'status': r.status_code, 'at': time.time(), 'source': 'Valio API'})
                 for row in r.json()["products"]:
                     out[row["productId"]] = row
-                    self._cache[f"{path}|{date}|{row['productId']}"] = row
+                    self._cache[f"{self.customer}|{path}|{date}|{row['productId']}"] = {'at': time.time(), 'row': row}
             self._save()
+        if len(out) > len(missing):
+            self.audit.append({'method': 'CACHE', 'path': path, 'customer': self.customer,
+                               'requested_date': date, 'product_ids': [p for p in ids if p not in missing],
+                               'source': 'Valio response, less than 120 seconds old'})
         return out
 
     def price(self, date, ids):

@@ -1,0 +1,12 @@
+{
+  "name": "valio-kitchen-sheet",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/ui.test.cjs",
+    "check": "node --check public/app.js"
+  },
+  "devDependencies": {
+    "jsdom": "^27.0.0",
+    "prettier": "^3.10.1"
+  }
+}

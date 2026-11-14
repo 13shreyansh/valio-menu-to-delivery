@@ -35,6 +35,14 @@ async def lifespan(app):
 
 app = FastAPI(title="Valio Aimo menu-to-delivery agent", lifespan=lifespan)
 app.mount("/mcp", mcp_app)
+from chefagent.kitchen_routes import router as sheet_router
+from chefagent.kitchen import KitchenError
+app.include_router(sheet_router)
+
+@app.exception_handler(KitchenError)
+async def sheet_error(req, exc):
+    return JSONResponse({"error": str(exc)}, status_code=422)
+
 
 SAMPLES = json.loads((ROOT / "public" / "samples.json").read_text()) if (ROOT / "public" / "samples.json").exists() else []
 

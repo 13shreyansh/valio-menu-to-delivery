@@ -11,3 +11,8 @@ eval/runs/
 eval/FROZEN.local
 .env
 *.log
+
+.venv/
+artifacts/*-local.json
+
+artifacts/font-source/
