@@ -456,12 +456,13 @@ function renderAudit() {
 
 /* ---------------- agents tab ---------------- */
 const TOOLS = [
+  ["request_order", "One sentence in, e.g. \"1,000 litres of lactose-free milk by Monday\": parsed, looked up, priced, compared on price, reliability and CO₂, and returned as a draft order with the approval decision. Also plain HTTP: GET /api/request?text=…"],
   ["search_products", "Search the catalogue with diet tags. Products that break the kitchen's allergen rules come back as excluded, with the reason."],
   ["get_product", "Allergens (contains / may contain), claims, labels, pack size, origin, delivery reliability, CO₂e per kg, Valio's substitution links."],
   ["quote", "Customer-specific price and availability for a shortlist on a delivery date, with pack size in kg/L."],
   ["find_substitutes", "Valio's own substitution links first, then close items, filtered by the kitchen's rules and checked for delivery."],
   ["plan_menu_order", "Menu and covers in, draft order out: deliveries, per-dish allocations, gaps, approval flags and audit trail."],
-  ["submit_order", "Valio re-checks the mandate; returns placed, pending_approval or rejected."],
+  ["submit_order", "Valio re-prices every line at its own fixed price and re-checks allergens, delivery and approval rules; returns placed, pending_approval or rejected."],
 ];
 $("#mcp-url").textContent = location.origin + "/mcp/";
 $("#tools").innerHTML = TOOLS.map(([n, d]) => `<div class="tool"><code>${n}</code><p>${esc(d)}</p></div>`).join("");
