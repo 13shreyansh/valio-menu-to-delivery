@@ -39,3 +39,12 @@ def test_legible_uncertain_photo_requires_explicit_correction(wedding_state):
     assert client.post('/api/sheet/photo/apply',json=body).status_code==422
     body['confirmed']=True
     assert client.post('/api/sheet/photo/apply',json=body).status_code==200
+
+def test_late_photo_receipt_merges_into_latest_sheet_without_old_approvals(wedding_state):
+    from chefagent.kitchen_routes import sheet_state
+    call={'id':'photo-receipt-test','purpose':'whiteboard understanding','source':'Gemini'}
+    receipt=k.seal({'created':__import__('time').time(),'reading':{'status':'unreadable'},'call':call})
+    wedding_state['budget']=1234
+    state=sheet_state({'token':k.seal(wedding_state),'photo_receipts':[receipt,receipt]})
+    assert state['budget']==1234 and not state['approvals']
+    assert state['calls']==[call]

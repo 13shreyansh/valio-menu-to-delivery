@@ -40,6 +40,8 @@ let order = null,
   photo = null,
   readToken = null,
   photoSrc = "",
+  photoReadRun = 0,
+  photoReceipts = [],
   storyRun = 0,
   storyActive = false,
   recorder = null,
@@ -275,6 +277,7 @@ async function tell(text, media) {
       text,
       media,
       listened_tokens: listenedTokens,
+      photo_receipts: photoReceipts,
     });
     listenedTokens = [];
     if (data.token && !data.rows) {
@@ -663,6 +666,8 @@ $("#camera").onclick = () => {
   $("#photo-file").click();
 };
 $("#photo-file").onchange = async () => {
+  if (storyActive) stopStory();
+  const readRun = ++photoReadRun;
   let file = $("#photo-file").files[0];
   if (!file) return;
   if (file.size > 6000000) {
@@ -670,24 +675,30 @@ $("#photo-file").onchange = async () => {
     return;
   }
   let data = bytes64(await file.arrayBuffer());
+  if (readRun !== photoReadRun) return;
   photoSrc = "data:" + file.type + ";base64," + data;
   $("#photo-panel").hidden = false;
   $("#photo-panel").innerHTML =
     "<h2>Reading the final menu…</h2><p>Your photo goes to Gemini. Your order stays unchanged until you check it.</p>";
   scrollToEl($("#photo-panel"));
   try {
+    const requestToken = order.token;
     let result = await api("/photo", {
-      token: order.token,
+      token: requestToken,
       media: { mime: file.type, data },
     });
-    if (result.token) {
+    if (result.read_token) photoReceipts.push(result.read_token);
+    // A photo can finish after the chef changed the sheet. Never restore its older signed state.
+    if (result.token && order.token === requestToken) {
       order.token = result.token;
       order.evidence.calls = result.calls || order.evidence.calls;
-    }
+    } else if (result.call) order.evidence.calls.push(result.call);
+    if (readRun !== photoReadRun) return;
     photo = result.reading;
     readToken = result.read_token;
     renderPhoto();
   } catch (e) {
+    if (readRun !== photoReadRun) return;
     $("#photo-panel").innerHTML =
       `<h2>Couldn't read it</h2><p>${esc(e.message)}</p><button id="retry-photo" class="outline">Choose another photo</button>`;
     $("#retry-photo").onclick = () => $("#photo-file").click();
@@ -800,6 +811,7 @@ async function applyPhoto(expectedRun = null) {
       token: order.token,
       read_token: readToken,
       reading: photo,
+      photo_receipts: photoReceipts,
       confirmed: !!$("#confirm-words")?.checked,
     });
     if (expectedRun !== null && expectedRun !== storyRun)

@@ -252,3 +252,99 @@ test("the entire recorded story reaches confirmation through its controls", asyn
     dom.window.close();
   }
 });
+
+test("a photo finishing after a chef edit never restores the old signed sheet", async () => {
+  let resolvePhoto,
+    photoPending = false,
+    mutationTokens = [];
+  const { w, dom } = await setup((url, body) => {
+    if (url.endsWith("/photo")) {
+      photoPending = true;
+      return new Promise((r) => (resolvePhoto = r));
+    }
+    if (url.endsWith("/change")) {
+      mutationTokens.push(body.token);
+      return fixture.reopened;
+    }
+    return fixture.initial;
+  });
+  try {
+    const input = w.document.querySelector("#photo-file");
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [
+        {
+          size: 1000,
+          type: "image/jpeg",
+          arrayBuffer: async () => new Uint8Array([255, 216, 255, 0]).buffer,
+        },
+      ],
+    });
+    const reading = input.onchange();
+    for (let i = 0; i < 30 && !photoPending; i++) await wait(2);
+    assert.ok(photoPending);
+    w.document.querySelector('[data-step="1"]').click();
+    await wait(15);
+    resolvePhoto({
+      reading: fixture.photo,
+      read_token: "photo",
+      token: fixture.initial.token,
+      calls: [],
+      call: { id: "test-read", source: "Gemini" },
+    });
+    await reading;
+    w.document.querySelector('[data-step="1"]').click();
+    await wait(15);
+    assert.equal(mutationTokens.length, 2);
+    assert.equal(mutationTokens[1], fixture.reopened.token);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("typing a chef correction stops an in-flight story without a late overwrite", async () => {
+  let resolveWedding,
+    storyPending = false;
+  const { w, dom } = await setup((url) => {
+    if (url.endsWith("/story-reading"))
+      return { ready: true, wedding_token: "test", photo: fixture.photo };
+    if (url.endsWith("/story-wedding")) {
+      storyPending = true;
+      return new Promise((r) => (resolveWedding = r));
+    }
+    if (url.endsWith("/tell"))
+      return {
+        ...fixture.wedding,
+        reading: {
+          status: "readable",
+          transcript: "Wedding Saturday 120 guests salmon and lemon tart",
+        },
+      };
+    return fixture.initial;
+  });
+  try {
+    const native = w.setTimeout;
+    w.setTimeout = (fn, ms) => native(fn, Math.min(ms, 1));
+    w.document.querySelector("#play").click();
+    for (let i = 0; i < 80 && !storyPending; i++) await wait(2);
+    assert.ok(storyPending);
+    w.document.querySelector("#keyboard").click();
+    w.document.querySelector("#tell-text").value =
+      "Wedding Saturday 120 guests salmon and lemon tart";
+    w.document
+      .querySelector("#tell-form")
+      .dispatchEvent(new w.Event("submit", { cancelable: true }));
+    await wait(15);
+    resolveWedding(fixture.initial);
+    await wait(15);
+    assert.equal(
+      w.document.querySelector("#place").textContent,
+      "3 things to check first",
+    );
+    assert.ok(
+      !w.document.querySelector("#notice").textContent.includes("STOP_STORY"),
+    );
+  } finally {
+    dom.window.close();
+  }
+});

@@ -76,7 +76,10 @@ def cutoff_passed(value):
     except (ValueError, TypeError): return True
 
 def build(state, fresh=False):
+    from . import build_catalog
+    downloaded_before=len(build_catalog.DOWNLOAD_AUDIT)
     cat, api = load(), ValioAPI(customer=KITCHEN['customer'], fresh=fresh)
+    api.audit.extend(build_catalog.DOWNLOAD_AUDIT[downloaded_before:])
     allocations = defaultdict(list)
     for s in services_for(state):
         recipe = RECIPES[s['recipe']]

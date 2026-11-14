@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "raw"
+DOWNLOAD_AUDIT = []
 
 # GS1 allergen type codes -> EU-14 allergen groups (plus a few useful sub-codes)
 GS1_ALLERGEN = {
@@ -105,6 +106,7 @@ def download_raw(raw_dir: Path):
             with open(raw_dir / name, "wb") as f:
                 for chunk in r.iter_bytes(1 << 20):
                     f.write(chunk)
+            DOWNLOAD_AUDIT.append({"method":"GET","path":path,"status":r.status_code,"source":"Valio catalogue download"})
 
 
 def main(raw: Path = RAW, out: Path = ROOT / "data" / "catalog.json"):

@@ -110,3 +110,14 @@ def test_photo_tags_compare_actual_previous_quantities(wedding_state):
     assert next(r for r in after['rows'] if r['role']=='whitefish')['change']=='Added'
     assert next(r for r in after['rows'] if r['role']=='flour')['change']=='Less'
     assert next(r for r in after['rows'] if r['role']=='fish')['total']==0
+
+def test_cold_catalogue_calls_included_in_receipt(monkeypatch):
+    from chefagent import build_catalog
+    from tests.conftest import Catalog
+    call={'method':'GET','path':'/api/products/download','status':200,'source':'Valio catalogue download'}
+    def cold_load():
+        build_catalog.DOWNLOAD_AUDIT.append(call)
+        return Catalog()
+    monkeypatch.setattr(k,'load',cold_load)
+    out=k.build(k.initial_state())
+    assert call in out['evidence']['calls']
