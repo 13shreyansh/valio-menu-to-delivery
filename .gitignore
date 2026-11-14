@@ -1,0 +1,13 @@
+# Valio's Junction data is for the event only: never commit it. It is downloaded from Valio's API.
+data/raw/
+data/catalog.json
+data/cache/valio_api.json
+__pycache__/
+*.pyc
+node_modules/
+.vercel
+data/cache/
+eval/runs/
+eval/FROZEN.local
+.env
+*.log

@@ -1,0 +1,106 @@
+[
+ {
+  "id": "aurora-week",
+  "label": "Hotel Aurora · Mon–Wed lunch & breakfast",
+  "customer": "HC-1001",
+  "services": [
+   {
+    "date": "2026-11-17",
+    "meal": "Lunch buffet",
+    "items": [
+     {
+      "text": "Lohikeitto (creamy salmon soup)",
+      "covers": 140,
+      "diet": []
+     },
+     {
+      "text": "Lihapullat, kermakastike, perunamuusi, puolukka",
+      "covers": 160,
+      "diet": []
+     },
+     {
+      "text": "Vegan red lentil curry with rice",
+      "covers": 60,
+      "diet": [
+       "vegan"
+      ]
+     }
+    ]
+   },
+   {
+    "date": "2026-11-18",
+    "meal": "Breakfast",
+    "items": [
+     {
+      "text": "Scrambled eggs",
+      "covers": 220,
+      "diet": []
+     },
+     {
+      "text": "Oat porridge with berries",
+      "covers": 150,
+      "diet": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "harbour-conf",
+  "label": "Harbour Hotel · nut-free conference",
+  "customer": "HC-1003",
+  "services": [
+   {
+    "date": "2026-11-18",
+    "meal": "Conference lunch",
+    "items": [
+     {
+      "text": "Chicken caesar salad",
+      "covers": 200,
+      "diet": []
+     },
+     {
+      "text": "Mushroom risotto (veg)",
+      "covers": 80,
+      "diet": [
+       "vegetarian"
+      ]
+     },
+     {
+      "text": "Chicken curry, basmati",
+      "covers": 200,
+      "diet": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "lapland-dinner",
+  "label": "Fell Lodge · Lapland dinner",
+  "customer": "HC-1002",
+  "services": [
+   {
+    "date": "2026-11-19",
+    "meal": "Dinner",
+    "items": [
+     {
+      "text": "Karjalanpaisti & perunamuusi",
+      "covers": 90,
+      "diet": []
+     },
+     {
+      "text": "Kuha, tilli-voikastike, perunat, porkkanat",
+      "covers": 70,
+      "diet": []
+     },
+     {
+      "text": "Pannukakku, mansikkahillo, kermavaahto",
+      "covers": 150,
+      "diet": []
+     }
+    ]
+   }
+  ]
+ }
+]
