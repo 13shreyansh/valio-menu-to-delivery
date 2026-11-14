@@ -291,10 +291,24 @@ function dashboard() {
         : "Next week's order is ready";
   return `<div class="subline">${stamp} · ordering for week 47</div><div class="dashboard-grid"><section class="card order-card"><div class="between"><h2>${heading}</h2><span class="pill ${S.working ? "" : pending ? "warn" : "ok"}">${S.working ? "Updating…" : o.status === "placed" ? "Placed" : pending ? `${pending} to approve` : "Ready to send"}</span></div><p class="prepared">Prepared from your menu, ${S.account.bookings.reduce((n, b) => n + b.covers, 0)} bookings and current stock.</p><p class="totals"><span data-total="${o.total}">${o.rows.filter((r) => r.units > 0).length} products · ${o.deliveries.length} deliveries · <span id="animated-total">${money(o.total)}</span></span> of your ${money(o.budget)} weekly budget</p>${budget(o)}${S.working ? checklist() : o.deliveries.map(deliveryMini).join("")}${o.request && !S.working ? `<p class="change-summary">${summary(o)}</p>` : ""}<div class="row order-actions">${btn("Review order", "review", "primary", S.working ? "disabled" : "")}${btn("Change something", "ask", "ghost", o.status === "placed" ? "disabled" : "")}</div></section><section class="card summary-card"><h3>This week and month</h3>${summaryRows(o)}</section></div><section class="recent"><h3>Recent orders</h3>${orderTable(S.account.orders.slice(0, 5), true)}</section>`;
 }
+function eventName(label, day) {
+  const weekday = day
+    ? new Date(day + "T12:00:00").toLocaleDateString("en-GB", {
+        weekday: "long",
+      })
+    : "";
+  const name = String(label || "Wedding").replace(
+    new RegExp("^" + weekday + "\\s+", "i"),
+    "",
+  );
+  return /^(wedding|conference)$/i.test(name)
+    ? name[0].toUpperCase() + name.slice(1).toLowerCase()
+    : name;
+}
 function summary(o) {
   const n = o.rows.filter((r) => r.change && r.units > 0).length;
   const delta = o.total - (o.previous_total ?? o.baseline_total);
-  return `${delta >= 0 ? "Added" : "Removed"} ${n} products for ${o.wedding ? new Date(o.wedding.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long" }) + " " + esc((o.wedding.event || "wedding").toLowerCase()) : "your kitchen change"} (${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}).`;
+  return `${delta >= 0 ? "Added" : "Removed"} ${n} products for ${o.wedding ? new Date(o.wedding.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long" }) + " " + esc(eventName(o.wedding.event, o.wedding.date).toLowerCase()) : "your kitchen change"} (${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}).`;
 }
 function summaryRows(o) {
   const cuts = o.deliveries
@@ -372,7 +386,7 @@ function eventTag(o) {
           weekday: "long",
         }) +
         " " +
-        (o.wedding.event || "wedding").toLowerCase()
+        eventName(o.wedding.event, o.wedding.date).toLowerCase()
     : "For kitchen change";
 }
 function orderPage(o, readonly = false) {
@@ -540,8 +554,9 @@ function understood() {
   return `<div class="between"><h3>What Valio understood</h3>${btn(S.editing ? "Done" : "Edit", "edit-reading", "link")}</div>${[
     [
       "Event",
-      (r.event || S.order.wedding?.event || "Wedding").replace(/^./, (c) =>
-        c.toUpperCase(),
+      eventName(
+        r.event || S.order.wedding?.event,
+        r.date || S.order.wedding?.date,
       ),
     ],
     ["Date", date(r.date || S.order.wedding?.date)],

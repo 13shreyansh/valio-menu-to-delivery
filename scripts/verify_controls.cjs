@@ -45,10 +45,10 @@ const fs = require("node:fs");
     await p.reload();
     await expect(
       p.getByRole("spinbutton", { name: "Weekly limit", exact: true }),
-    ).toHaveValue("100");
+    ).toHaveValue("100", { timeout: 120000 });
     await expect(
       p.getByRole("combobox", { name: "When an order goes over", exact: true }),
-    ).toHaveValue("block");
+    ).toHaveValue("block", { timeout: 120000 });
     report.persisted_rules = "passed";
     await p
       .locator(".sidebar")

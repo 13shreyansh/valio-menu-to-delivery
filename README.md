@@ -17,7 +17,7 @@ npm ci
 .venv/bin/python -m uvicorn api.index:app --port 8077
 ```
 
-Without Blob credentials, local development uses SQLite at `/tmp/valio-aurora.sqlite`. Vercel refuses to fall back to temporary storage. Private Blob documents use conditional ETag writes to prevent lost updates. Draft IDs are random and orders are idempotent by draft ID. Each confirmed order retains its exact prices and receipt.
+Without Blob credentials, local development uses SQLite at `/tmp/valio-aurora.sqlite`. Vercel refuses to fall back to temporary storage. Private Blob documents use conditional ETag writes to prevent lost updates. Draft IDs are random and orders are idempotent by draft ID. An immutable order snapshot is saved before its pointer commits to the ledger, so a failed convenience-draft write cannot alter the recorded price on retry. Pending assistant drafts are indexed for chef review. Each confirmed order retains its exact prices and receipt.
 
 The demo-account sign-in uses an expiring, HttpOnly, same-site cookie. The MCP endpoint is deliberately public and scoped only to this synthetic account. It accepts no arbitrary customer identifier, chef identity or caller-supplied approval. Do not use this public demo connector for a production kitchen.
 
@@ -29,7 +29,11 @@ npm test
 npm run check
 npx playwright test
 .venv/bin/python scripts/mcp_client.py https://valio-menu-to-delivery.vercel.app
+node scripts/verify_media.cjs
+node scripts/verify_controls.cjs
 ```
+
+`verify_media.cjs` passes the synthetic voice fixture through the browser's actual MediaRecorder and Gemini, then uploads a menu photograph. It verifies the recording and interpretation pipeline; it does not represent a physical microphone test. `verify_controls.cjs` saves rules through the real controls, verifies web and MCP blocking, opens an assistant draft, restores the original rules, adds a catalogue item, and opens an invoice. Run it separately from the main acceptance suite because the demo account is shared.
 
 The Python supplier fixtures and JSDOM fixtures are synthetic test data and are never served by the product. The Playwright test uses the deployed URL and actual Valio/Gemini responses. `BASE_URL` may override it for local verification. Screenshots, console reports and measured MCP results go to `artifacts/e2e/`.
 

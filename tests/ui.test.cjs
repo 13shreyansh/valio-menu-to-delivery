@@ -574,3 +574,14 @@ test("a rejected catalogue addition never displays a success notice", async () =
   assert.equal(w.document.querySelector(".status-note"), null);
   dom.window.close();
 });
+test("a photo event name with its weekday does not repeat the day in summaries", () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  o.wedding.event = "Saturday Wedding";
+  w.hooks.state.path = "/dashboard";
+  w.hooks.render();
+  const text = w.document.querySelector(".change-summary").textContent;
+  assert.ok(text.includes("Saturday wedding"));
+  assert.ok(!/Saturday saturday/i.test(text));
+  dom.window.close();
+});
