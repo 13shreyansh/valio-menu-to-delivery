@@ -306,10 +306,10 @@ class Planner:
             # dried or juice forms are on the shelf. Tried before changing the recipe.
             base = [need["ingredient"]] + list(need.get("search") or [])[:3]
             forms = [f"{pre} {b}" for b in base for pre in ("frozen", "pakaste", "dried", "kuivattu")] + \
-                    [f"{b} {suf}" for b in base[:2] for suf in ("juice", "mehu", "puree")]
+                    [f"{b} {suf}" for b in base[:2] for suf in ("juice", "mehu")]
             alt = {**need, "search": forms, "form": "any",
                    "notes": (need.get("notes", "") + " The fresh form cannot be delivered in time: frozen, dried, "
-                             "juice or puree forms of exactly this ingredient are acceptable; other ingredients are not.").strip()}
+                             "or juice forms of exactly this ingredient (never a purée, jam or sauce) are acceptable; other ingredients are not.").strip()}
             c3, _ = self.candidates(alt)
             fresh_ids = {t["id"] for t in tried}
             r3, _ = self.pick(alt, [c for c in c3 if c["id"] not in fresh_ids])

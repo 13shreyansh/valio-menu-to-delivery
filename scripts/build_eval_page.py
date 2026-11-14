@@ -13,7 +13,8 @@ MENU_RUNS = [("base-bm25", "Floor: keyword top-1, no LLM pick, no guardrails"),
              ("v0", "First full agent"),
              ("v1", "Prepared forms accepted (diced onion, liquid egg); only salt, pepper, oil and water treated as pantry"),
              ("v2", "Pack size from the printed size when the price API agrees; exact quantities for direct requests"),
-             ("v3", "Fresh herb or citrus not deliverable: same ingredient in another form (frozen, dried, juice) before any recipe change")]
+             ("v3", "Fresh herb or citrus not deliverable: same ingredient in another form (frozen, dried, juice) before any recipe change"),
+             ("v4", "Purée no longer counts as another form of the same ingredient (found on held-out)")]
 REQ_RUNS = [("r0", "First run"),
             ("r1", "Grader fix: a safe alternative held for sign-off counts as a stop"),
             ("r2", "Bug fix: direct requests now keep exact quantities and the cheapest-viable rule"),
@@ -43,10 +44,10 @@ def main():
     menu_tbl = ("<table class=evtable><tr><th>Version</th><th>Dishes cookable</th><th>Ingredient recall</th>"
                 "<th>Allergen/diet violations</th><th>Qty within ±30%</th><th>Extra lines</th><th>Unflagged recipe swaps</th></tr>"
                 + "".join(rows) + "</table>")
-    ho = load("heldout-final")
-    ho_html = (f'<p><b>Held-out</b> (6 cases, 23 dishes from 14 recipe cards never seen while tuning, run once on the frozen version): '
+    ho = load("heldout-v3") or load("heldout-final")
+    ho_html = (f'<p><b>Held-out, frozen v3</b> (6 cases, 23 dishes from 14 recipe cards never seen while tuning, run once on the frozen version): '
                f'{pct(ho["cookable_rate"])} cookable, {pct(ho["ingredient_recall"])} ingredient recall, '
-               f'{ho["allergen_violations"]} allergen violations.</p>') if ho else \
+               f'{ho["allergen_violations"]} allergen violations. Frozen v2 scored 70% on the same split; the one lost dish came from the new step buying berry purée for a pie, which we then fixed in code, so held-out is no longer clean for later versions and we report this number.</p>') if ho else \
         '<p class=muted>Held-out split: runs once, on the frozen version.</p>'
 
     rrows = []

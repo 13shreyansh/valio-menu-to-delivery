@@ -42,13 +42,13 @@ See `eval/README.md` and `eval/METRICS_LOG.md`. There are two evals, both graded
 
 | | Floor (keyword top-1, no guardrails) | Agent |
 |---|---|---|
-| Dishes cookable (dev) | 8% | 62% |
-| Dishes cookable (held-out, run once on the frozen version) | | 70% |
+| Dishes cookable (dev) | 8% | 70% |
+| Dishes cookable (held-out, 14 unseen recipes, run once on frozen v3) | | 65% |
 | Allergen/diet violations | 16 | **0** |
 | Requests handled correctly, every one of 3 fresh runs (pass^3) | | **13/13** |
 | False auto-approvals | | **0** |
 
-What still fails: fresh herbs that are out of stock (dill), and a few picks where the gold rules and the agent disagree. Those go to a chef via `eval/spot_checks.csv`.
+What still fails: a dried herb replaces a fresh one at the same weight, small needs can open large frozen packs, and a few picks where the gold rules and the agent disagree. Those go to a chef via `eval/spot_checks.csv`.
 
 ## Run it
 
