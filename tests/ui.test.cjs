@@ -19,7 +19,8 @@ function setup() {
   w.matchMedia = () => ({ matches: false });
   w.fetch = async () => ({ ok: true, json: async () => ({}) });
   w.eval(
-    code + `;window.hooks={render,state:S,esc,orderPage,start,rulesView};`,
+    code +
+      `;window.hooks={render,state:S,esc,orderPage,start,rulesView,checklistLabel,fakeRecording:()=>{S.listening=true;recorder={stop:()=>{window.micStopped=true}};stream={getTracks:()=>[{stop:()=>{window.trackStopped=true}}]}}};`,
   );
   return { dom, w, errors };
 }
@@ -163,5 +164,124 @@ test("a catalogue response preserves a query typed while the first search is loa
     w.document.querySelector("#catalogue-search input").value,
     "463380",
   );
+  dom.window.close();
+});
+test("Escape stops both the recording and microphone tracks before closing Ask Valio", async () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.drawer = "ask";
+  w.hooks.fakeRecording();
+  w.hooks.render();
+  w.document.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
+  await new Promise((r) => setImmediate(r));
+  assert.equal(w.micStopped, true);
+  assert.equal(w.trackStopped, true);
+  assert.equal(w.hooks.state.listening, false);
+  assert.equal(w.hooks.state.drawer, null);
+  dom.window.close();
+});
+test("company sign-in note does not leak into signed-in account screens", async () => {
+  const { dom, w } = setup();
+  const order = account(w);
+  const acc = w.hooks.state.account;
+  w.hooks.state.path = "/";
+  w.hooks.render();
+  w.fetch = async (url) => ({
+    ok: true,
+    json: async () =>
+      url === "/api/account" ? acc : url === "/api/drafts" ? order : {},
+  });
+  w.document.querySelector("[data-action=company]").click();
+  assert.equal(w.hooks.state.companyNote, true);
+  w.document.querySelector("[data-action=login]").click();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(w.hooks.state.notice, "");
+  assert.equal(w.hooks.state.companyNote, false);
+  w.hooks.state.path = "/settings/connected-ai";
+  w.hooks.render();
+  assert.equal(w.document.querySelector(".status-note"), null);
+  dom.window.close();
+});
+test("checklist labels follow the parsed delivery day and saved allergen rules", () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.account.rules = {
+    ...rules,
+    allergens: ["nuts", "peanuts", "milk"],
+  };
+  assert.equal(
+    w.hooks.checklistLabel(2, { date: "2026-11-18" }),
+    "Checking Wednesday stock at Valio",
+  );
+  assert.ok(w.hooks.checklistLabel(4, {}).includes("no milk"));
+  dom.window.close();
+});
+test("assistant drafts can be opened from the account Drafts table", () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.path = "/orders";
+  w.hooks.state.tab = "Drafts";
+  w.hooks.state.account.drafts = [
+    {
+      draft_id: "a".repeat(32),
+      order_number: "Week 47",
+      placed_by: "Aurora Group assistant",
+      placed_at: "2026-11-14T21:00:00Z",
+      total: 95.55,
+      products: 9,
+      deliveries: [{ date: "2026-11-18" }],
+      status: "Draft",
+    },
+  ];
+  w.hooks.render();
+  assert.equal(
+    w.document.querySelector("a[data-open-draft]").getAttribute("href"),
+    "/orders/draft-" + "a".repeat(32),
+  );
+  assert.ok(
+    w.document
+      .querySelector("tbody")
+      .textContent.includes("Aurora Group assistant"),
+  );
+  dom.window.close();
+});
+test("untrusted event names are escaped in dashboard summaries and product tags", () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  o.wedding.event = "<img src=x onerror=alert(1)>";
+  w.hooks.state.path = "/dashboard";
+  w.hooks.render();
+  assert.equal(w.document.querySelectorAll("img").length, 0);
+  assert.ok(
+    w.document.querySelector(".change-summary").textContent.includes("<img"),
+  );
+  w.hooks.state.path = "/orders/week-47";
+  w.hooks.render();
+  assert.equal(w.document.querySelectorAll("img").length, 0);
+  dom.window.close();
+});
+test("unplaced assistant drafts never claim placement or within-rules approval", () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.path = "/orders";
+  w.hooks.state.tab = "Drafts";
+  w.hooks.state.account.drafts = [
+    {
+      draft_id: "a".repeat(32),
+      order_number: "Week 47",
+      placed_by: "Aurora Group assistant",
+      placed_at: "2026-11-14T21:00:00Z",
+      total: 95.55,
+      deliveries: [],
+      status: "Draft",
+    },
+  ];
+  w.hooks.render();
+  const text = w.document.querySelector("tbody").textContent;
+  assert.ok(text.includes("Prepared by Aurora Group assistant"));
+  assert.ok(!text.includes("Placed by Aurora Group assistant"));
+  assert.ok(!text.includes("Within your rules"));
   dom.window.close();
 });

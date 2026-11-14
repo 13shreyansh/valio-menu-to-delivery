@@ -121,3 +121,15 @@ def test_cold_catalogue_calls_included_in_receipt(monkeypatch):
     monkeypatch.setattr(k,'load',cold_load)
     out=k.build(k.initial_state())
     assert call in out['evidence']['calls']
+
+def test_cached_valio_receipt_keeps_real_response_and_origin_time(monkeypatch,tmp_path):
+    path=tmp_path/'cache.json';checked=time.time()
+    row={'productId':'P','catalogPrice':{'value':7}}
+    path.write_text(json.dumps({'HC-A|/api/price|2026-11-20|P':{'at':checked,'row':row}}))
+    monkeypatch.setattr(v,'CACHE',path)
+    api=v.ValioAPI(customer='HC-A',offline=True)
+    api.price('2026-11-20',['P'])
+    call=api.audit[0]
+    assert call['response']['products']==[row]
+    assert call['origin_checked_at']=={'P':checked}
+    assert call['at']>=checked and 'Valio API' in call['source']

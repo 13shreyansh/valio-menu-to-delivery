@@ -90,10 +90,14 @@ class ValioAPI:
                     out[row["productId"]] = row
                     self._cache[f"{self.customer}|{path}|{date}|{row['productId']}"] = {'at': time.time(), 'row': row}
             self._save()
-        if len(out) > len(missing):
-            self.audit.append({'method': 'CACHE', 'path': path, 'customer': self.customer,
-                               'requested_date': date, 'product_ids': [p for p in ids if p not in missing],
-                               'source': 'Valio response, less than 120 seconds old'})
+        cached=[pid for pid in ids if pid not in missing]
+        if cached:
+            origins={pid:self._cache[f"{self.customer}|{path}|{date}|{pid}"].get('at') for pid in cached}
+            self.audit.append({'id':'cache-'+hashlib.sha256(json.dumps([self.customer,path,date,origins],sort_keys=True).encode()).hexdigest(),
+                               'method':'CACHE','path':path,'customer':self.customer,'requested_date':date,'product_ids':cached,
+                               'at':time.time(),'source':'Valio API response, reused within 120 seconds',
+                               'request':{'customer':self.customer,'requestedDate':date,'products':cached},
+                               'response':{'products':[out[pid] for pid in cached]},'origin_checked_at':origins})
         return out
 
     def price(self, date, ids):

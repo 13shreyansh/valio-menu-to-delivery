@@ -45,10 +45,11 @@ def initial_state():
 
 def services_for(state, context=None):
     services = copy.deepcopy(state.get("services_override", context.BASE_SERVICES if context else BASE_SERVICES))
-    w = state.get('wedding')
-    if w:
-        for dish in w['dishes']:
-            services.append({'date': w['date'], 'recipe': dish['recipe'], 'covers': dish['covers'], 'wedding': True})
+    events = state.get('menu_events')
+    if events is None: events = [state['wedding']] if state.get('wedding') else []
+    for event in events:
+        for dish in event['dishes']:
+            services.append({'date': event['date'], 'recipe': dish['recipe'], 'covers': dish['covers'], 'wedding': True, 'event_id':event.get('id')})
     return services
 
 def delivery_for(date): return max(d for d in DELIVERIES if d <= date)
@@ -97,7 +98,16 @@ def build(state, fresh=False, context=None, progress=None):
     for day in DELIVERIES:
         ids=list(dict.fromkeys(pid for (d,role) in allocations if d==day for pid in INGREDIENTS[role]['ids']))
         if ids: quoted[day]=(api.price(day,ids),api.availability(day,ids))
-    if progress: progress('stock', quoted)
+    if progress:
+        usable=copy.deepcopy(STOCK); needed={}
+        for day in DELIVERIES:
+            needed[day]=[]
+            for (d,role),parts in allocations.items():
+                if d!=day:continue
+                gross=sum(p['amount'] for p in parts)
+                if gross>usable.get(role,0):needed[day].append(INGREDIENTS[role]['ids'][0])
+                usable[role]=max(0,usable.get(role,0)-gross)
+        progress('stock', {'quotes':quoted,'needed':needed})
     remaining = copy.deepcopy(STOCK)
     rows, checks, reasons = [], [], []
     cream_rows, swaps = [], []
@@ -119,7 +129,7 @@ def build(state, fresh=False, context=None, progress=None):
                 violations = product_violations(p, policy=KITCHEN['policy'])
                 if role in ('fish','whitefish') and 'fish' not in p['contains']:
                     violations.append('Fish allergen is not declared; cannot prove safe replacement.')
-                if role == 'fish' and pid != INGREDIENTS[role]['ids'][0]:
+                if role == 'fish' and pid != INGREDIENTS[role]['ids'][0] and KITCHEN.get('same_allergens',True):
                     original = cat.get(INGREDIENTS[role]['ids'][0])
                     if not original or set(p['contains'])-set(original['contains']) or set(p['may_contain'])-set(original['may_contain']):
                         violations.append('Replacement introduces a new allergen.')
@@ -252,7 +262,12 @@ def build(state, fresh=False, context=None, progress=None):
         deliveries.append({'date':d,'rows':group,'subtotal':round(sum(r['total'] for r in group),2),
                            'cutoff':min(cutoffs) if cutoffs else None,
                            'cutoff_note':'Earliest cut-off returned by Valio. Terminal cut-off not supplied.' if any(r['availability'].get('model')=='Terminal' and not r['availability'].get('closing_time') for r in group) else 'Valio cut-off'})
-    state['calls']=(state.get('calls',[])+api.audit)[-300:]
+    for call in api.audit:
+        if call.get('product_ids'):
+            call['product_names']={pid:(cat.get(pid).get('name_fi') or cat.get(pid).get('name')) for pid in call['product_ids'] if cat.get(pid)}
+    calls=state.get('calls',[])
+    known={c.get('id') for c in calls if c.get('id')}
+    state['calls']=(calls+[c for c in api.audit if not c.get('id') or c['id'] not in known])[-300:]
     return {'rows':rows,'deliveries':deliveries,'total':total,'budget':state['budget'],'checks':checks,
             'pending':sum(not c['approved'] for c in checks),'can_place':all(c['approved'] for c in checks),
             'kitchen':KITCHEN,'stock':STOCK,'recipes':RECIPES,'services':services_for(state, context),

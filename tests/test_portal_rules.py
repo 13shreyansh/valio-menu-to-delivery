@@ -144,3 +144,122 @@ def test_empty_order_is_not_a_placed_purchase(account):
     assert not o["can_place"]
     with pytest.raises(k.KitchenError):
         account.place(o["draft_id"], assistant=True)
+
+
+def test_second_event_keeps_existing_wedding(account):
+    first = account.new_draft()
+    a = account.apply_request(
+        first["draft_id"],
+        parsed={
+            "status": "readable",
+            "transcript": "Wedding 120 lemon tart Saturday",
+            "covers": 120,
+            "date": "2026-11-21",
+            "event": "Wedding",
+            "dishes": [{"recipe": "tart", "covers": 120}],
+        },
+    )
+    b = account.apply_request(
+        first["draft_id"],
+        parsed={
+            "status": "readable",
+            "transcript": "Also breakfast 40 Wednesday conference",
+            "covers": 40,
+            "date": "2026-11-18",
+            "event": "Conference",
+            "dishes": [{"recipe": "breakfast", "covers": 40}],
+        },
+    )
+    assert any(
+        s["date"] == "2026-11-21" and s["recipe"] == "tart" and s["covers"] == 120
+        for s in b["services"]
+    )
+    assert any(
+        s.get("wedding")
+        and s["date"] == "2026-11-18"
+        and s["recipe"] == "breakfast"
+        and s["covers"] == 40
+        for s in b["services"]
+    )
+    edited = account.apply_request(
+        first["draft_id"],
+        parsed={
+            "status": "readable",
+            "transcript": "Wedding 100 lemon tart Saturday",
+            "covers": 100,
+            "date": "2026-11-21",
+            "event": "Wedding",
+            "dishes": [{"recipe": "tart", "covers": 100}],
+        },
+        replace_event_id=a["reading"]["event_id"],
+    )
+    assert sum(s["recipe"] == "tart" for s in edited["services"]) == 1
+    assert next(s["covers"] for s in edited["services"] if s["recipe"] == "tart") == 100
+    assert any(
+        s.get("wedding") and s["date"] == "2026-11-18" for s in edited["services"]
+    )
+
+
+def test_committed_snapshot_survives_failed_draft_write_and_price_changes(
+    account, monkeypatch, supplier
+):
+    import httpx
+
+    o = account.new_draft(
+        services=[{"date": "2026-11-18", "recipe": "breakfast", "covers": 40}],
+        source="Aurora Group assistant",
+    )
+    original = account.Store.put
+
+    def put(self, key, value, version=None):
+        if key == "drafts/" + o["draft_id"] and value.get("status") == "placed":
+            raise httpx.ReadTimeout("Injected failed convenience write")
+        return original(self, key, value, version)
+
+    monkeypatch.setattr(account.Store, "put", put)
+    placed = account.place(o["draft_id"], assistant=True)
+    assert account.draft(o["draft_id"])[0]["status"] == "draft"
+    supplier.price_factor = 2
+    retry = account.place(o["draft_id"], assistant=True)
+    assert (
+        retry["total"] == placed["total"]
+        and retry["order_number"] == placed["order_number"]
+    )
+    assert account.get_draft(o["draft_id"])["total"] == placed["total"]
+    assert len(account.ledger()[0]["orders"]) == 1
+    with pytest.raises(k.KitchenError):
+        account.change(o["draft_id"], "add", "463380")
+
+
+def test_external_draft_is_indexed_for_chef_review(account):
+    o = account.new_draft(
+        services=[{"date": "2026-11-18", "recipe": "breakfast", "covers": 40}],
+        source="Aurora Group assistant",
+    )
+    entries = account.ledger()[0]["drafts"]
+    assert any(
+        d["draft_id"] == o["draft_id"]
+        and d["placed_by"] == "Aurora Group assistant"
+        and d["status"] == "Draft"
+        for d in entries
+    )
+    placed = account.place(o["draft_id"], assistant=True)
+    assert (
+        next(
+            d for d in account.ledger()[0]["drafts"] if d["draft_id"] == o["draft_id"]
+        )["status"]
+        == "Placed"
+    )
+
+
+def test_mcp_rule_errors_tell_the_assistant_why_it_needs_a_chef(account):
+    from chefagent.mcp_server import place_order
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    account.save_rules({"weekly_limit": 1, "over_limit": "block"})
+    o = account.new_draft(
+        services=[{"date": "2026-11-18", "recipe": "breakfast", "covers": 40}],
+        source="Aurora Group assistant",
+    )
+    with pytest.raises(ToolError, match="chef to review"):
+        place_order(o["draft_id"])

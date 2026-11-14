@@ -112,15 +112,15 @@ async def ask(req: Request):
                 ).strftime("%A %d %b")
             elif stage == "stock":
                 # These are actual shortlisted product responses, not a canned result.
-                originals = [p.f.INGREDIENTS["fish"]["ids"][0]]
                 late = len(
                     {
                         pid
-                        for _, av in data.values()
-                        for pid in originals
+                        for day, (_, av) in data["quotes"].items()
+                        for pid in data["needed"].get(day, [])
                         if pid in av
                         and (
                             not av[pid].get("orderable")
+                            or (av[pid].get("available_date") or "9999") > day
                             or k.cutoff_passed(av[pid].get("closing_time"))
                         )
                     }
@@ -140,7 +140,11 @@ async def ask(req: Request):
                     if data["total"] > data["budget"]
                     else "within your limit"
                 )
-                attention = data["total"] > data["budget"]
+                attention = any(
+                    c["kind"] == "budget" and not c["approved"] for c in data["checks"]
+                )
+                if attention and data["total"] <= data["budget"]:
+                    result = "change needs your OK"
             q.put(
                 {
                     "type": "step",
@@ -159,6 +163,7 @@ async def ask(req: Request):
                 media=body.get("media"),
                 source="photo" if body.get("media") else "text",
                 progress=progress,
+                replace_event_id=body.get("replace_event_id"),
             )
             q.put({"type": "result", "order": out})
         except Exception as exc:

@@ -4,6 +4,16 @@ No caller-supplied approval or customer identifier is accepted.
 
 from mcp.server.mcpserver import MCPServer
 from . import portal
+from .kitchen import KitchenError
+from mcp.server.mcpserver.exceptions import ToolError
+
+
+def checked(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except KitchenError as exc:
+        raise ToolError(str(exc)) from None
+
 
 mcp = MCPServer(
     name="valio-aimo-aurora",
@@ -13,57 +23,64 @@ mcp = MCPServer(
 
 
 def compact(o):
-    return {
-        key: o.get(key)
-        for key in [
-            "draft_id",
-            "order_number",
-            "status",
-            "total",
-            "budget",
-            "pending",
-            "can_place",
-            "request",
-            "confirmation",
-        ]
-    } | {
-        "checks": [
-            {
-                "id": c["id"],
-                "reason": c["text"],
-                "approved": c["approved"],
-                "can_approve": c["can_approve"],
-            }
-            for c in o.get("checks", [])
-        ],
-        "deliveries": [
-            {
-                "date": d["date"],
-                "subtotal": d["subtotal"],
-                "cutoff": d["cutoff"],
-                "products": [
-                    {
-                        "product_id": r["product_id"],
-                        "name": r["name"],
-                        "quantity": r["units"],
-                        "pack": r["pack"],
-                        "unit": r["unit"],
-                        "unit_price": r["unit_price"],
-                        "total": r["total"],
-                    }
-                    for r in d["rows"]
-                ],
-            }
-            for d in o.get("deliveries", [])
-        ],
-    }
+    return (
+        {
+            "review_url": "https://valio-menu-to-delivery.vercel.app/orders/draft-"
+            + str(o.get("draft_id", ""))
+        }
+        | {
+            key: o.get(key)
+            for key in [
+                "draft_id",
+                "order_number",
+                "status",
+                "total",
+                "budget",
+                "pending",
+                "can_place",
+                "request",
+                "confirmation",
+            ]
+        }
+        | {
+            "checks": [
+                {
+                    "id": c["id"],
+                    "reason": c["text"],
+                    "approved": c["approved"],
+                    "can_approve": c["can_approve"],
+                }
+                for c in o.get("checks", [])
+            ],
+            "deliveries": [
+                {
+                    "date": d["date"],
+                    "subtotal": d["subtotal"],
+                    "cutoff": d["cutoff"],
+                    "products": [
+                        {
+                            "product_id": r["product_id"],
+                            "name": r["name"],
+                            "quantity": r["units"],
+                            "pack": r["pack"],
+                            "unit": r["unit"],
+                            "unit_price": r["unit_price"],
+                            "total": r["total"],
+                        }
+                        for r in d["rows"]
+                    ],
+                }
+                for d in o.get("deliveries", [])
+            ],
+        }
+    )
 
 
 @mcp.tool(
     description="Find real Valio products, with account-specific prices and current stock. Scoped to Hotel Aurora. Products marked allowed=false cannot be ordered under this kitchen’s rules."
 )
 def find_products(query: str) -> dict:
-    return portal.search(query)
+    return checked(portal.search, query)
 
 
 @mcp.tool(
@@ -89,7 +106,7 @@ def check_stock_and_prices(
     description="Prepare an order from dishes, guests and a day. Example: breakfast for 40 for Wednesday. Uses kitchen recipes, real Valio customer prices, stock and cut-offs, and the same weekly limit, allergens, swap and bigger-change rules as the portal. Returns draft_id. No approvals can be bypassed."
 )
 def prepare_order(request: str) -> dict:
-    o = portal.prepare_assistant(request)
+    o = checked(portal.prepare_assistant, request)
     return o if o.get("question") else compact(o)
 
 
@@ -97,7 +114,7 @@ def prepare_order(request: str) -> dict:
     description="Place the draft returned by prepare_order. Re-checks prices, supply and all current kitchen rules. Orders needing an OK must be reviewed by the chef in the portal. Stores the confirmation in Hotel Aurora Orders, Recent orders and the account bell. Valio has no shipping/order API, so this is a demo-account confirmation."
 )
 def place_order(draft_id: str) -> dict:
-    o = portal.place(draft_id, assistant=True)
+    o = checked(portal.place, draft_id, assistant=True)
     return compact(o) | {
         "message": f"Order {o['order_number']} placed by Aurora Group assistant · Within your rules",
         "notice": "Demo account: no real order was placed.",

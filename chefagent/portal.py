@@ -1,5 +1,7 @@
 """One ordering engine and account ledger for the portal and remote MCP clients."""
 
+import httpx
+
 import copy, datetime as dt, math, time, uuid
 from types import SimpleNamespace
 from . import kitchen as k, portal_fixtures as f
@@ -77,6 +79,7 @@ def context(rule):
         ]
     }
     data["KITCHEN"]["budget"] = rule["weekly_limit"]
+    data["KITCHEN"]["same_allergens"] = rule["same_allergens"]
     data["KITCHEN"]["policy"] = {
         "free_from": rule["allergens"],
         "strict_may_contain": True,
@@ -184,6 +187,9 @@ def build(state, fresh=False, progress=None):
         request_at=state.get("request_at"),
         reading=state.get("reading"),
         baseline_total=state.get("baseline_total", out["total"]),
+        previous_total=state.get(
+            "previous_total", state.get("baseline_total", out["total"])
+        ),
         draft_id=state.get("id"),
         status=state.get("status", "draft"),
     )
@@ -207,6 +213,7 @@ def new_draft(services=None, source="Sanna Virtanen"):
     state["baseline_rows"] = copy.deepcopy(out["rows"])
     Store().put("drafts/" + state["id"], state)
     out["draft_id"] = state["id"]
+    index_draft(state, out)
     return out
 
 
@@ -225,6 +232,9 @@ def draft(draft_id):
 
 def get_draft(draft_id):
     state, _ = draft(draft_id)
+    committed = committed_order(draft_id)
+    if committed:
+        return committed
     if state["status"] == "placed":
         return state["placed_order"]
     return build(state)
@@ -232,7 +242,7 @@ def get_draft(draft_id):
 
 def change(draft_id, action, value=None):
     state, version = draft(draft_id)
-    if state["status"] != "draft":
+    if state["status"] != "draft" or committed_order(draft_id):
         raise k.KitchenError(
             "This order is already placed. Start another order to change it."
         )
@@ -289,14 +299,21 @@ def change(draft_id, action, value=None):
     )
     result = build(state)
     Store().put("drafts/" + draft_id, state, version)
+    index_draft(state, result)
     return result
 
 
 def apply_request(
-    draft_id, text=None, media=None, source="text", progress=None, parsed=None
+    draft_id,
+    text=None,
+    media=None,
+    source="text",
+    progress=None,
+    parsed=None,
+    replace_event_id=None,
 ):
     state, version = draft(draft_id)
-    if state["status"] != "draft":
+    if state["status"] != "draft" or committed_order(draft_id):
         raise k.KitchenError("This order has already been placed.")
     start = time.time()
     if parsed:
@@ -346,6 +363,7 @@ def apply_request(
         }
     before = build(state)
     state["previous_rows"] = copy.deepcopy(before["rows"])
+    state["previous_total"] = before["total"]
     state["request"] = reading["transcript"]
     state["request_at"] = now()
     state["reading"] = reading
@@ -357,8 +375,9 @@ def apply_request(
             if service["date"] != reading["date"]
         ]
         state["wedding"] = None
+        state["menu_events"] = []
     else:
-        state["wedding"] = {
+        event = {
             "date": reading.get("date", "2026-11-21"),
             "event": reading.get("event", "Wedding"),
             "covers": reading["covers"],
@@ -366,6 +385,31 @@ def apply_request(
             "transcript": reading["transcript"],
             "from_photo": source == "photo",
         }
+        events = state.setdefault(
+            "menu_events",
+            [copy.deepcopy(state["wedding"])] if state.get("wedding") else [],
+        )
+        target = (
+            next((e for e in events if e.get("id") == replace_event_id), None)
+            if replace_event_id
+            else next(
+                (
+                    e
+                    for e in events
+                    if e["date"] == event["date"]
+                    and e.get("event", "Wedding").casefold()
+                    == event["event"].casefold()
+                ),
+                None,
+            )
+        )
+        event["id"] = target.get("id", uuid.uuid4().hex) if target else uuid.uuid4().hex
+        if target:
+            events[events.index(target)] = event
+        else:
+            events.append(event)
+        state["wedding"] = event
+        reading["event_id"] = event["id"]
     state["overrides"] = {}
     state["keep_original"] = False
     out = build(state, progress=progress)
@@ -373,6 +417,7 @@ def apply_request(
         progress("allergens", out)
         progress("budget", out)
     Store().put("drafts/" + draft_id, state, version)
+    index_draft(state, out)
     return out
 
 
@@ -381,77 +426,145 @@ def ledger():
     return doc or {"orders": [], "events": []}, version
 
 
-def place(draft_id, assistant=False):
-    state, version = draft(draft_id)
+def index_draft(state, out):
+    entry = {
+        "draft_id": state["id"],
+        "order_number": "Week 47",
+        "placed_by": state["source"],
+        "placed_at": state["request_at"],
+        "deliveries": [{"date": d["date"]} for d in out["deliveries"]],
+        "total": out["total"],
+        "products": sum(r["units"] > 0 for r in out["rows"]),
+        "status": "Draft",
+        "request": state.get("request", ""),
+    }
+    for attempt in range(4):
+        book, etag = ledger()
+        if any(o["draft_id"] == state["id"] for o in book["orders"]):
+            return
+        entries = book.setdefault("drafts", [])
+        existing = next(
+            (i for i, d in enumerate(entries) if d["draft_id"] == state["id"]), None
+        )
+        if existing is None:
+            entries.insert(0, entry)
+        else:
+            entries[existing] = entry
+        try:
+            Store().put("ledger", book, etag)
+            return
+        except Conflict:
+            if attempt == 3:
+                raise
+
+
+def committed_order(draft_id, book=None):
+    book = book if book is not None else ledger()[0]
+    entry = next((o for o in book["orders"] if o["draft_id"] == draft_id), None)
+    if not entry:
+        return None
+    if entry.get("snapshot_key"):
+        snapshot, _ = Store().get(entry["snapshot_key"])
+        if not snapshot:
+            raise k.KitchenError(
+                "This order was placed. Its receipt is temporarily unavailable. Try again."
+            )
+        return snapshot
+    # Compatibility with confirmations made before immutable commit snapshots.
+    state, _ = draft(draft_id)
     if state["status"] == "placed":
         return state["placed_order"]
+    raise k.KitchenError(
+        "This order was already placed. Open Orders to review its recorded total."
+    )
+
+
+def place(draft_id, assistant=False):
+    state, version = draft(draft_id)
     if assistant and state["source"] != "Aurora Group assistant":
         raise k.KitchenError(
             "Prepare this order through the connected assistant first."
         )
+    committed = committed_order(draft_id)
+    if committed:
+        return committed
+    if state["status"] == "placed":
+        return state["placed_order"]
     out = build(state, fresh=True)
     if state.get("keep_original") or not out["can_place"]:
         raise k.KitchenError(
             "This order needs a chef to review it before it can be placed."
         )
-    # A shared weekly ledger is compared under the same conditional write as commitment.
+    oid = "AU-" + draft_id[:8].upper()
+    by = "Aurora Group assistant" if assistant else "Sanna Virtanen"
+    out.update(
+        status="placed",
+        order_number=oid,
+        placed_by=by,
+        placed_at=now(),
+        week=47,
+        within_rules=True,
+        confirmation={"order_number": oid, "at": now(), "demo": True},
+    )
+    # The immutable snapshot exists before its pointer can be committed to the ledger.
+    # The successful conditional ledger write is the only commitment point.
+    snapshot_key = "orders/" + draft_id + "/" + uuid.uuid4().hex
+    Store().put(snapshot_key, out)
     for attempt in range(4):
         book, etag = ledger()
-        rule = out["rules"]
-        oid = "AU-" + draft_id[:8].upper()
-        by = "Aurora Group assistant" if assistant else "Sanna Virtanen"
-        out.update(
-            status="placed",
-            order_number=oid,
-            placed_by=by,
-            placed_at=now(),
-            week=47,
-            within_rules=True,
-            confirmation={"order_number": oid, "at": now(), "demo": True},
+        committed = committed_order(draft_id, book)
+        if committed:
+            return committed
+        book["orders"].insert(
+            0,
+            {
+                "order_number": oid,
+                "draft_id": draft_id,
+                "snapshot_key": snapshot_key,
+                "placed_by": by,
+                "placed_at": out["placed_at"],
+                "total": out["total"],
+                "products": sum(r["units"] > 0 for r in out["rows"]),
+                "deliveries": [
+                    {
+                        "date": d["date"],
+                        "subtotal": d["subtotal"],
+                        "cutoff": d["cutoff"],
+                        "rows": [{"id": r["id"]} for r in d["rows"] if r["units"] > 0],
+                    }
+                    for d in out["deliveries"]
+                ],
+                "status": "Placed",
+                "week": 47,
+                "within_rules": True,
+            },
         )
-        if not any(o["draft_id"] == draft_id for o in book["orders"]):
-            book["orders"].insert(
-                0,
-                {
-                    "order_number": oid,
-                    "draft_id": draft_id,
-                    "placed_by": by,
-                    "placed_at": out["placed_at"],
-                    "total": out["total"],
-                    "products": len(out["rows"]),
-                    "deliveries": [
-                        {
-                            "date": d["date"],
-                            "subtotal": d["subtotal"],
-                            "cutoff": d["cutoff"],
-                            "rows": [{"id": r["id"]} for r in d["rows"]],
-                        }
-                        for d in out["deliveries"]
-                    ],
-                    "status": "Placed",
-                    "week": 47,
-                    "within_rules": True,
-                },
-            )
-            book["events"].insert(
-                0,
-                {
-                    "id": oid,
-                    "by": by,
-                    "text": f"{by} placed order {oid}",
-                    "total": out["total"],
-                    "at": out["placed_at"],
-                    "note": "Within your rules",
-                },
-            )
+        for item in book.get("drafts", []):
+            if item["draft_id"] == draft_id:
+                item["status"] = "Placed"
+        book["events"].insert(
+            0,
+            {
+                "id": oid,
+                "by": by,
+                "text": f"{by} placed order {oid}",
+                "total": out["total"],
+                "at": out["placed_at"],
+                "note": "Within your rules",
+            },
+        )
         try:
             Store().put("ledger", book, etag)
             break
         except Conflict:
             if attempt == 3:
                 raise
+    # This draft is only a convenience copy. A failed write cannot change commitment.
     state.update(status="placed", placed_order=out)
-    Store().put("drafts/" + draft_id, state, version)
+    try:
+        Store().put("drafts/" + draft_id, state, version)
+    except (Conflict, k.KitchenError, httpx.HTTPError):
+        pass
     return out
 
 
@@ -463,6 +576,7 @@ def account():
         "team": f.TEAM,
         "rules": rule,
         "orders": book["orders"] + history()["orders"],
+        "drafts": [d for d in book.get("drafts", []) if d["status"] == "Draft"],
         "events": book["events"],
         "bookings": f.KITCHEN["bookings"],
         "recipes": f.RECIPES,
@@ -523,6 +637,7 @@ def prepare_assistant(text):
     state["calls"].append(reading["call"])
     out = build(state)
     Store().put("drafts/" + state["id"], state, ver)
+    index_draft(state, out)
     return out
 
 
