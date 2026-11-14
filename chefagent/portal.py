@@ -389,6 +389,18 @@ def apply_request(
             "menu_events",
             [copy.deepcopy(state["wedding"])] if state.get("wedding") else [],
         )
+        if source == "photo" and not replace_event_id:
+            previous_wedding = next(
+                (
+                    item
+                    for item in events
+                    if item["date"] == event["date"]
+                    and "wedding" in item.get("event", "Wedding").casefold()
+                ),
+                None,
+            )
+            if previous_wedding:
+                replace_event_id = previous_wedding.get("id")
         target = (
             next((e for e in events if e.get("id") == replace_event_id), None)
             if replace_event_id

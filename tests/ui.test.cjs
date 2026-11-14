@@ -20,7 +20,7 @@ function setup() {
   w.fetch = async () => ({ ok: true, json: async () => ({}) });
   w.eval(
     code +
-      `;window.hooks={render,state:S,esc,orderPage,start,rulesView,checklistLabel,fakeRecording:()=>{S.listening=true;recorder={stop:()=>{window.micStopped=true}};stream={getTracks:()=>[{stop:()=>{window.trackStopped=true}}]}}};`,
+      `;window.hooks={render,state:S,esc,orderPage,start,rulesView,checklistLabel,microphone,saveRule,flushRules:()=>ruleQueue,fakeRecording:()=>{S.listening=true;recordingSession={recorder:{stop:()=>{window.micStopped=true}},stream:{getTracks:()=>[{stop:()=>{window.trackStopped=true}}]}}}};`,
   );
   return { dom, w, errors };
 }
@@ -283,5 +283,261 @@ test("unplaced assistant drafts never claim placement or within-rules approval",
   assert.ok(text.includes("Prepared by Aurora Group assistant"));
   assert.ok(!text.includes("Placed by Aurora Group assistant"));
   assert.ok(!text.includes("Within your rules"));
+  dom.window.close();
+});
+test("a recorder setup failure releases an already granted microphone and audio context", async () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.drawer = "ask";
+  let stopped = 0,
+    closed = 0;
+  Object.defineProperty(w.navigator, "mediaDevices", {
+    value: {
+      getUserMedia: async () => ({
+        getTracks: () => [{ stop: () => stopped++ }],
+      }),
+    },
+  });
+  w.AudioContext = class {
+    constructor() {
+      this.state = "running";
+    }
+    createAnalyser() {
+      throw Error("Injected analyser failure");
+    }
+    close() {
+      closed++;
+      return Promise.resolve();
+    }
+  };
+  await w.hooks.microphone();
+  assert.equal(stopped, 1);
+  assert.equal(closed, 1);
+  assert.equal(w.hooks.state.listening, false);
+  assert.equal(w.hooks.state.micStarting, false);
+  assert.ok(w.hooks.state.error.includes("Recording could not start"));
+  dom.window.close();
+});
+test("a new recording cannot start while the previous recording is being transcribed", async () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.drawer = "ask";
+  let created = 0,
+    stopped = 0,
+    closed = 0,
+    resolveTranscription;
+  Object.defineProperty(w.navigator, "mediaDevices", {
+    value: {
+      getUserMedia: async () => ({
+        getTracks: () => [{ stop: () => stopped++ }],
+      }),
+    },
+  });
+  w.AudioContext = class {
+    constructor() {
+      this.state = "running";
+    }
+    createAnalyser() {
+      return {
+        fftSize: 0,
+        frequencyBinCount: 4,
+        getByteFrequencyData: (a) => a.fill(2),
+      };
+    }
+    createMediaStreamSource() {
+      return { connect: () => {} };
+    }
+    close() {
+      closed++;
+      return Promise.resolve();
+    }
+  };
+  w.MediaRecorder = class {
+    constructor() {
+      created++;
+      this.mimeType = "audio/webm";
+      this.state = "inactive";
+    }
+    start() {
+      this.state = "recording";
+    }
+    stop() {
+      this.state = "inactive";
+      this.ondataavailable({
+        data: new w.Blob(["audio"], { type: "audio/webm" }),
+      });
+      this.onstop();
+    }
+  };
+  w.fetch = () => new Promise((resolve) => (resolveTranscription = resolve));
+  await w.hooks.microphone();
+  assert.equal(w.hooks.state.listening, true);
+  await w.hooks.microphone();
+  assert.equal(w.hooks.state.transcribing, true);
+  await w.hooks.microphone();
+  assert.equal(created, 1);
+  for (let i = 0; i < 10 && !resolveTranscription; i++)
+    await new Promise((r) => setImmediate(r));
+  resolveTranscription({
+    ok: true,
+    json: async () => ({ transcript: "Breakfast for 40 Wednesday" }),
+  });
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(stopped, 1);
+  assert.equal(closed, 1);
+  assert.equal(w.hooks.state.transcribing, false);
+  assert.equal(w.hooks.state.input, "Breakfast for 40 Wednesday");
+  dom.window.close();
+});
+test("successive rule edits queue instead of silently dropping the later control change", async () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  w.hooks.state.path = "/settings/rules";
+  w.hooks.render();
+  let firstResolve;
+  const calls = [];
+  let saved = { ...rules };
+  w.fetch = async (url, opts) => {
+    if (url === "/api/rules") {
+      const change = JSON.parse(opts.body);
+      calls.push(change);
+      if (calls.length === 1)
+        return new Promise(
+          (resolve) =>
+            (firstResolve = () => {
+              saved = { ...saved, ...change };
+              resolve({ ok: true, json: async () => saved });
+            }),
+        );
+      saved = { ...saved, ...change };
+      return { ok: true, json: async () => saved };
+    }
+    return { ok: true, json: async () => o };
+  };
+  const a = w.hooks.saveRule("weekly_limit", 100);
+  const b = w.hooks.saveRule("over_limit", "block");
+  for (let i = 0; i < 3; i++) await new Promise((r) => setImmediate(r));
+  firstResolve();
+  await b;
+  assert.deepEqual(calls, [{ weekly_limit: 100 }, { over_limit: "block" }]);
+  assert.equal(w.hooks.state.account.rules.weekly_limit, 100);
+  assert.equal(
+    w.document.querySelector("[data-rule=over_limit]").value,
+    "block",
+  );
+  assert.equal(w.hooks.state.rulesSaving, false);
+  dom.window.close();
+});
+test("closing Ask Valio while microphone permission is pending stops a later granted stream", async () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.drawer = "ask";
+  let grant,
+    stopped = 0;
+  Object.defineProperty(w.navigator, "mediaDevices", {
+    value: { getUserMedia: () => new Promise((r) => (grant = r)) },
+  });
+  const pending = w.hooks.microphone();
+  assert.equal(w.hooks.state.micStarting, true);
+  w.document.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
+  await new Promise((r) => setImmediate(r));
+  grant({ getTracks: () => [{ stop: () => stopped++ }] });
+  await pending;
+  assert.equal(stopped, 1);
+  assert.equal(w.hooks.state.listening, false);
+  assert.equal(w.hooks.state.drawer, null);
+  dom.window.close();
+});
+test("the settings saving guard remains active for a second edit arriving during draft refresh", async () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  let finishRefresh, finishSecond;
+  let requests = 0;
+  w.fetch = async (url, opts) => {
+    if (url === "/api/rules") {
+      requests++;
+      if (requests === 1)
+        return {
+          ok: true,
+          json: async () => ({ ...rules, weekly_limit: 100 }),
+        };
+      return new Promise(
+        (r) =>
+          (finishSecond = () =>
+            r({
+              ok: true,
+              json: async () => ({
+                ...rules,
+                weekly_limit: 100,
+                over_limit: "block",
+              }),
+            })),
+      );
+    }
+    if (!finishRefresh)
+      return new Promise(
+        (r) => (finishRefresh = () => r({ ok: true, json: async () => o })),
+      );
+    return { ok: true, json: async () => o };
+  };
+  w.hooks.saveRule("weekly_limit", 100);
+  for (let i = 0; i < 5 && !finishRefresh; i++)
+    await new Promise((r) => setImmediate(r));
+  const second = w.hooks.saveRule("over_limit", "block");
+  finishRefresh();
+  for (let i = 0; i < 5 && !finishSecond; i++)
+    await new Promise((r) => setImmediate(r));
+  assert.equal(w.hooks.state.rulesSaving, true);
+  finishSecond();
+  await second;
+  assert.equal(w.hooks.state.rulesSaving, false);
+  dom.window.close();
+});
+test("an automatic recorder stop clears Listening and completes the transcript", async () => {
+  const { dom, w } = setup();
+  account(w);
+  w.hooks.state.drawer = "ask";
+  let rec;
+  Object.defineProperty(w.navigator, "mediaDevices", {
+    value: {
+      getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }),
+    },
+  });
+  w.AudioContext = class {
+    constructor() {
+      this.state = "running";
+    }
+    createAnalyser() {
+      return { frequencyBinCount: 4, getByteFrequencyData: (a) => a.fill(0) };
+    }
+    createMediaStreamSource() {
+      return { connect: () => {} };
+    }
+    close() {
+      return Promise.resolve();
+    }
+  };
+  w.MediaRecorder = class {
+    constructor() {
+      rec = this;
+      this.mimeType = "audio/webm";
+    }
+    start() {}
+    stop() {}
+  };
+  w.fetch = async () => ({
+    ok: true,
+    json: async () => ({ transcript: "Breakfast for40 Wednesday" }),
+  });
+  await w.hooks.microphone();
+  rec.ondataavailable({ data: new w.Blob(["audio"], { type: "audio/webm" }) });
+  const stopped = rec.onstop();
+  assert.equal(w.hooks.state.listening, false);
+  assert.equal(w.hooks.state.transcribing, true);
+  await stopped;
+  assert.equal(w.hooks.state.transcribing, false);
+  assert.equal(w.hooks.state.input, "Breakfast for40 Wednesday");
   dom.window.close();
 });

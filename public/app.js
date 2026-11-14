@@ -397,7 +397,7 @@ function footer() {
   )
     return "";
   const o = S.order;
-  return `<div class="footer-bar"><div class="footer-total">Total ${money(o.total)}${o.total > o.budget ? `<span class="amber">${money(o.total - o.budget)} over weekly budget</span>` : ""}</div><div class="row">${o.pending ? `<span class="small muted">${o.pending} still need your OK</span>` : ""}${btn(S.busy ? "Checking…" : "Place order", "place", "primary", !o.can_place || S.busy ? "disabled" : "")}</div></div>`;
+  return `<div class="footer-bar"><div class="footer-total">Total ${money(o.total)}${o.total > o.budget ? `<span class="amber">${money(o.total - o.budget)} over weekly budget</span>` : ""}</div><div class="row">${o.pending ? `<span class="small muted">${o.pending} still need your OK</span>` : ""}${btn(S.busy ? "Checking…" : "Place order", "place", "primary", !o.can_place || S.busy || S.rulesSaving ? "disabled" : "")}</div></div>`;
 }
 function confirmation() {
   const o = S.order;
@@ -531,7 +531,7 @@ function events() {
 function drawer() {
   return S.drawer === "receipt"
     ? receipt()
-    : `<aside class="drawer" role="complementary" aria-label="Ask Valio"><header class="drawer-header"><h3>Ask Valio</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close Ask Valio"')}</header><div class="drawer-body">${S.request ? `<div class="request-block">${esc(S.request)}<div class="tiny">${time(S.requestAt || new Date().toISOString())}</div></div>${S.order.reading ? understood() : ""}${S.working ? '<div class="working"><i class="spinner"></i>Working on your order…</div>' : S.question ? `<p class="muted">${esc(S.question)}</p>` : S.order.reading ? `<div class="ask-result"><p>${summary(S.order)} ${S.order.pending} things need your OK.</p><div style="margin-top:16px">${btn("Review order", "review", "primary")}</div></div>` : ""}` : `<p class="muted">Tell Valio what's changing in your kitchen. Dishes and guests are enough.</p><p class="example">“Conference lunch Tuesday, 60 guests, one vegan option”</p><p class="example">“We're closed on Thursday”</p>`}</div><form class="composer" id="ask-form"><label class="sr-only" for="ask-input">Tell Valio what's changing</label><textarea id="ask-input" rows="3" placeholder="Tell Valio what's changing…" ${S.working ? "disabled" : ""}>${esc(S.input)}</textarea>${S.mediaName ? `<p class="small muted" style="margin-top:8px">${esc(S.mediaName)} ${btn("Remove", "remove-file", "link")}</p>` : ""}${S.listening ? `<p class="small amber">Listening…</p><div class="meter"><i id="audio-level" style="width:${S.level}%"></i></div>` : ""}<div class="composer-actions">${btn(icon("paperclip") + "Add menu or photo", "attach", "attach", S.working ? "disabled" : "")}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="row" style="gap:8px">${btn(icon("mic"), "mic", `mic ${S.listening ? "listening" : ""}`, `aria-label="${S.listening ? "Stop recording" : "Start recording"}" ${S.working ? "disabled" : ""}`)}${btn("Send", "send", "primary", S.working || S.listening ? "disabled" : "")}</div></div></form></aside>`;
+    : `<aside class="drawer" role="complementary" aria-label="Ask Valio"><header class="drawer-header"><h3>Ask Valio</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close Ask Valio"')}</header><div class="drawer-body">${S.request ? `<div class="request-block">${esc(S.request)}<div class="tiny">${time(S.requestAt || new Date().toISOString())}</div></div>${S.order.reading && !S.question ? understood() : ""}${S.working ? '<div class="working"><i class="spinner"></i>Working on your order…</div>' : S.question ? `<p class="muted">${esc(S.question)}</p>` : S.order.reading ? `<div class="ask-result"><p>${summary(S.order)} ${S.order.pending} things need your OK.</p><div style="margin-top:16px">${btn("Review order", "review", "primary")}</div></div>` : ""}` : `<p class="muted">Tell Valio what's changing in your kitchen. Dishes and guests are enough.</p><p class="example">“Conference lunch Tuesday, 60 guests, one vegan option”</p><p class="example">“We're closed on Thursday”</p>`}</div><form class="composer" id="ask-form"><label class="sr-only" for="ask-input">Tell Valio what's changing</label><textarea id="ask-input" rows="3" placeholder="Tell Valio what's changing…" ${S.working || S.transcribing || S.micStarting ? "disabled" : ""}>${esc(S.input)}</textarea>${S.mediaName ? `<p class="small muted" style="margin-top:8px">${esc(S.mediaName)} ${btn("Remove", "remove-file", "link")}</p>` : ""}${S.transcribing ? `<p class="small muted">Reading your recording…</p>` : ""}${S.listening ? `<p class="small amber">Listening…</p><div class="meter"><i id="audio-level" style="width:${S.level}%"></i></div>` : ""}<div class="composer-actions">${btn(icon("paperclip") + "Add menu or photo", "attach", "attach", S.working ? "disabled" : "")}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="row" style="gap:8px">${btn(icon("mic"), "mic", `mic ${S.listening ? "listening" : ""}`, `aria-label="${S.listening ? "Stop recording" : "Start recording"}" ${S.working || S.micStarting || S.transcribing || S.busy ? "disabled" : ""}`)}${btn("Send", "send", "primary", S.working || S.listening || S.transcribing || S.micStarting ? "disabled" : "")}</div></div></form></aside>`;
 }
 function understood() {
   const r = S.order.reading;
@@ -622,7 +622,9 @@ async function send() {
   const oldTotal = S.order.total;
   S.input = $("#ask-input")?.value || S.input;
   if (!S.input.trim() && !S.media) return;
-  const text = S.question ? S.request + ". " + S.input.trim() : S.input.trim();
+  const text = S.question
+    ? (S.questionContext || S.request) + ". " + S.input.trim()
+    : S.input.trim();
   S.request = text || S.mediaName;
   S.requestAt = new Date().toISOString();
   S.input = "";
@@ -695,6 +697,7 @@ async function send() {
         if (event.type === "result") {
           if (event.order.question) {
             S.question = event.order.question;
+            S.questionContext = event.order.reading?.transcript || S.request;
             S.input = text;
           } else {
             S.order = event.order;
@@ -727,35 +730,81 @@ async function send() {
     }
   }
 }
-let recorder, stream, audioCtx, analyser, levelFrame;
+let recordingSession = null,
+  micGeneration = 0;
+function cleanRecording(session) {
+  if (!session || session.cleaned) return;
+  session.cleaned = true;
+  cancelAnimationFrame(session.frame);
+  session.stream?.getTracks().forEach((track) => track.stop());
+  if (session.context && session.context.state !== "closed")
+    Promise.resolve(session.context.close()).catch(() => {});
+}
+async function stopMicrophone(discard = false) {
+  if (S.micStarting) {
+    micGeneration++;
+    S.micStarting = false;
+    if (recordingSession?.stream) cleanRecording(recordingSession);
+    recordingSession = null;
+    return;
+  }
+  if (S.listening) {
+    if (recordingSession) recordingSession.discard = discard;
+    await microphone();
+  }
+}
 async function microphone() {
   if (S.listening) {
-    recorder.stop();
-    stream?.getTracks().forEach((t) => t.stop());
+    const session = recordingSession;
     S.listening = false;
-    cancelAnimationFrame(levelFrame);
+    S.transcribing = !session.discard;
+    session.recorder.stop();
+    cleanRecording(session);
     render();
     return;
   }
+  if (S.micStarting || S.transcribing || S.busy || S.working) return;
+  const generation = ++micGeneration,
+    session = { chunks: [], cleaned: false, discard: false };
+  recordingSession = session;
+  S.micStarting = true;
+  S.error = "";
+  render();
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioCtx = new AudioContext();
-    analyser = audioCtx.createAnalyser();
-    audioCtx.createMediaStreamSource(stream).connect(analyser);
-    analyser.fftSize = 256;
-    let chunks = [];
-    recorder = new MediaRecorder(stream);
-    recorder.ondataavailable = (e) => {
-      if (e.data.size) chunks.push(e.data);
+    session.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (generation !== micGeneration) {
+      cleanRecording(session);
+      return;
+    }
+    session.context = new AudioContext();
+    session.analyser = session.context.createAnalyser();
+    session.analyser.fftSize = 256;
+    session.context
+      .createMediaStreamSource(session.stream)
+      .connect(session.analyser);
+    session.recorder = new MediaRecorder(session.stream);
+    session.recorder.ondataavailable = (e) => {
+      if (e.data.size) session.chunks.push(e.data);
     };
-    recorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      audioCtx.close();
-      const blob = new Blob(chunks, { type: recorder.mimeType });
+    session.recorder.onstop = async () => {
+      cleanRecording(session);
+      const current = recordingSession === session;
+      if (current) {
+        recordingSession = null;
+        S.listening = false;
+        S.micStarting = false;
+        S.transcribing = !session.discard;
+      }
+      if (session.discard || !current) {
+        if (current) render();
+        return;
+      }
+      render();
       try {
+        const blob = new Blob(session.chunks, {
+          type: session.recorder.mimeType,
+        });
         const data = await asBase64(blob);
-        S.busy = true;
-        render();
         const out = await api("/transcribe", {
           media: { mime: blob.type.split(";")[0], data },
         });
@@ -763,29 +812,46 @@ async function microphone() {
       } catch (e) {
         S.error = e.message;
       } finally {
-        S.busy = false;
+        S.transcribing = false;
         render();
       }
     };
-    recorder.start();
+    session.recorder.start();
     S.listening = true;
+    S.micStarting = false;
     render();
     function meter() {
-      if (!S.listening) return;
-      const a = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(a);
-      S.level = Math.min(100, (a.reduce((s, v) => s + v, 0) / a.length) * 2);
+      if (!S.listening || recordingSession !== session) return;
+      const values = new Uint8Array(session.analyser.frequencyBinCount);
+      session.analyser.getByteFrequencyData(values);
+      S.level = Math.min(
+        100,
+        (values.reduce((sum, n) => sum + n, 0) / values.length) * 2,
+      );
       const el = $("#audio-level");
       if (el) el.style.width = S.level + "%";
-      levelFrame = requestAnimationFrame(meter);
+      session.frame = requestAnimationFrame(meter);
     }
     meter();
   } catch (e) {
-    S.error =
-      "Microphone access was not available. Check your browser permission or type your request.";
+    if (generation !== micGeneration) {
+      cleanRecording(session);
+      return;
+    }
+    session.discard = true;
+    cleanRecording(session);
+    if (session.recorder?.state === "recording") session.recorder.stop();
+    if (recordingSession === session) recordingSession = null;
+    S.micStarting = false;
+    S.listening = false;
+    S.transcribing = false;
+    S.error = ["NotAllowedError", "PermissionDeniedError"].includes(e.name)
+      ? "Microphone access was not available. Check your browser permission or type your request."
+      : "Recording could not start. Please try again, or type your request.";
     render();
   }
 }
+
 function asBase64(blob) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -869,6 +935,7 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (action === "logout") {
+    await stopMicrophone(true);
     await task(async () => {
       await api("/logout", {});
       S.path = "/";
@@ -886,7 +953,7 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (action === "close-drawer") {
-    if (S.listening) await microphone();
+    if (S.listening || S.micStarting) await stopMicrophone();
     S.input = $("#ask-input")?.value || S.input;
     S.drawer = null;
     render();
@@ -1016,14 +1083,8 @@ document.addEventListener("click", async (e) => {
   }
   if (action === "allergen-confirm") {
     const a = $("#new-allergen").value;
-    await task(async () => {
-      S.account.rules = await api("/rules", {
-        allergens: [...S.account.rules.allergens, a],
-      });
-      S.order = await api("/drafts/" + S.order.draft_id);
-      S.addAllergen = false;
-      S.notice = "Rules saved.";
-    });
+    S.addAllergen = false;
+    await saveRule("allergens", [...S.account.rules.allergens, a]);
     return;
   }
   if (action === "edit-reading") {
@@ -1080,6 +1141,36 @@ document.addEventListener("input", (e) => {
   if (e.target.matches("#catalogue-search input"))
     S.catalogueQuery = e.target.value;
 });
+let ruleQueue = Promise.resolve(),
+  pendingRules = {};
+function saveRule(key, value) {
+  pendingRules[key] = value;
+  S.account.rules = { ...S.account.rules, [key]: value };
+  S.rulesSaving = true;
+  S.notice = "";
+  ruleQueue = ruleQueue.then(async () => {
+    S.rulesSaving = true;
+    try {
+      const saved = await api("/rules", { [key]: value });
+      if (JSON.stringify(pendingRules[key]) === JSON.stringify(value))
+        delete pendingRules[key];
+      S.account.rules = { ...saved, ...pendingRules };
+      if (!Object.keys(pendingRules).length) {
+        if (S.order.status === "draft")
+          S.order = await api("/drafts/" + S.order.draft_id);
+        S.rulesSaving = Object.keys(pendingRules).length > 0;
+        S.notice = S.rulesSaving ? "" : "Rules saved.";
+      }
+    } catch (e) {
+      if (JSON.stringify(pendingRules[key]) === JSON.stringify(value))
+        delete pendingRules[key];
+      S.error = e.message;
+      S.rulesSaving = Object.keys(pendingRules).length > 0;
+    }
+    render();
+  });
+  return ruleQueue;
+}
 document.addEventListener("change", async (e) => {
   if (e.target.id === "photo-file") {
     const f = e.target.files[0];
@@ -1102,17 +1193,12 @@ document.addEventListener("change", async (e) => {
         : e.target.type === "number"
           ? Number(e.target.value)
           : e.target.value;
-    await task(async () => {
-      S.account.rules = await api("/rules", { [key]: value });
-      if (S.order.status === "draft")
-        S.order = await api("/drafts/" + S.order.draft_id);
-      S.notice = "Rules saved.";
-    });
+    await saveRule(key, value);
   }
 });
 document.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") {
-    if (S.listening) await microphone();
+    if (S.listening || S.micStarting) await stopMicrophone();
     S.drawer = null;
     S.why = null;
     S.invoice = null;

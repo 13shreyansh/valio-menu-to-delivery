@@ -21,3 +21,6 @@ artifacts/*.wav
 
 artifacts/e2e/
 artifacts/*.tgz
+artifacts/media/
+artifacts/controls/
+artifacts/*.aiff
