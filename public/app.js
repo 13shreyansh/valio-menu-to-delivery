@@ -225,7 +225,12 @@ async function change(action, value, expectedRun = null) {
   if (busy || !order) return;
   busy = true;
   try {
-    const result = await api("/change", { token: order.token, action, value });
+    const result = await api("/change", {
+      token: order.token,
+      action,
+      value,
+      photo_receipts: photoReceipts,
+    });
     if (expectedRun !== null && expectedRun !== storyRun)
       throw new Error("STOP_STORY");
     render(result, false);

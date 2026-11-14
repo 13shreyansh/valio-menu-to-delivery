@@ -264,6 +264,8 @@ test("a photo finishing after a chef edit never restores the old signed sheet", 
     }
     if (url.endsWith("/change")) {
       mutationTokens.push(body.token);
+      if (mutationTokens.length === 2)
+        assert.deepEqual(body.photo_receipts, ["photo"]);
       return fixture.reopened;
     }
     return fixture.initial;
