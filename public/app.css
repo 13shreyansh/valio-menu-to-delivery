@@ -1431,8 +1431,12 @@ pre {
   .has-drawer main {
     padding: 24px 16px;
   }
+  .start {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .signin {
     padding: 28px;
+    min-width: 0;
   }
   .ask-result .primary {
     width: 100%;

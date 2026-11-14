@@ -145,10 +145,7 @@ const fs = require("node:fs");
     }
     await p.locator("main tbody tr").first().locator("a").click();
     await expect(
-      p
-        .locator(".topbar h1, .mobile-title")
-        .filter({ hasText: /^Order AU-/ })
-        .first(),
+      p.getByRole("heading", { name: /^Order AU-/ }).first(),
     ).toBeVisible({ timeout: 60000 });
     await expect(p.locator(".day-header").first()).toContainText("delivered");
     await shot("past-order");

@@ -34,6 +34,13 @@ for (const [name, viewport] of [
       if (m.type() === "error") errors.push(m.text());
     });
     await p.goto(base + "/");
+    expect(
+      await p.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(viewport.width);
+    const startBounds = await p.locator(".signin").boundingBox();
+    expect(startBounds.x + startBounds.width).toBeLessThanOrEqual(
+      viewport.width,
+    );
     await shot(p, `${name}-start`);
     await p
       .getByRole("button", {
