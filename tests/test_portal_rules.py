@@ -264,10 +264,66 @@ def test_mcp_rule_errors_tell_the_assistant_why_it_needs_a_chef(account):
     with pytest.raises(ToolError, match="chef to review"):
         place_order(o["draft_id"])
 
+
 def test_final_wedding_photo_replaces_wedding_even_when_its_event_name_differs(account):
-    o=account.new_draft()
-    account.apply_request(o['draft_id'],parsed={'status':'readable','transcript':'Saturday wedding 120 salmon soup','covers':120,'date':'2026-11-21','event':'Saturday wedding','dishes':[{'recipe':'soup','covers':120}]})
-    out=account.apply_request(o['draft_id'],source='photo',parsed={'status':'readable','transcript':'Final wedding whitefish120 tart120 cheeseboard140 No soup','covers':120,'date':'2026-11-21','event':'Wedding','dishes':[{'recipe':'whitefish','covers':120},{'recipe':'tart','covers':120},{'recipe':'cheeseboard','covers':140}]})
-    events=[s for s in out['services'] if s.get('wedding')]
-    assert [s['recipe'] for s in events]==['whitefish','tart','cheeseboard']
-    assert next(s['covers'] for s in events if s['recipe']=='cheeseboard')==140
+    o = account.new_draft()
+    account.apply_request(
+        o["draft_id"],
+        parsed={
+            "status": "readable",
+            "transcript": "Saturday wedding 120 salmon soup",
+            "covers": 120,
+            "date": "2026-11-21",
+            "event": "Saturday wedding",
+            "dishes": [{"recipe": "soup", "covers": 120}],
+        },
+    )
+    out = account.apply_request(
+        o["draft_id"],
+        source="photo",
+        parsed={
+            "status": "readable",
+            "transcript": "Final wedding whitefish120 tart120 cheeseboard140 No soup",
+            "covers": 120,
+            "date": "2026-11-21",
+            "event": "Wedding",
+            "dishes": [
+                {"recipe": "whitefish", "covers": 120},
+                {"recipe": "tart", "covers": 120},
+                {"recipe": "cheeseboard", "covers": 140},
+            ],
+        },
+    )
+    events = [s for s in out["services"] if s.get("wedding")]
+    assert [s["recipe"] for s in events] == ["whitefish", "tart", "cheeseboard"]
+    assert next(s["covers"] for s in events if s["recipe"] == "cheeseboard") == 140
+
+
+def test_a_conference_photo_does_not_replace_a_wedding_on_the_same_day(account):
+    o = account.new_draft()
+    account.apply_request(
+        o["draft_id"],
+        parsed={
+            "status": "readable",
+            "transcript": "Wedding120 tart Saturday",
+            "covers": 120,
+            "date": "2026-11-21",
+            "event": "Wedding",
+            "dishes": [{"recipe": "tart", "covers": 120}],
+        },
+    )
+    out = account.apply_request(
+        o["draft_id"],
+        source="photo",
+        parsed={
+            "status": "readable",
+            "transcript": "Saturday conference breakfast40",
+            "covers": 40,
+            "date": "2026-11-21",
+            "event": "Conference",
+            "dishes": [{"recipe": "breakfast", "covers": 40}],
+        },
+    )
+    events = [s for s in out["services"] if s.get("wedding")]
+    assert any(s["recipe"] == "tart" and s["covers"] == 120 for s in events)
+    assert any(s["recipe"] == "breakfast" and s["covers"] == 40 for s in events)
