@@ -1,10 +1,12 @@
 """Catalog access and lexical search (BM25 over English + Finnish names, brand and ingredients)."""
-import json, re, unicodedata
+import json, re, unicodedata, threading, fcntl
 from functools import lru_cache
 from pathlib import Path
 from rank_bm25 import BM25Okapi
 
 ROOT = Path(__file__).resolve().parent.parent
+TEMP = Path("/tmp/chefdata")
+_INIT_LOCK = threading.Lock()
 TOKEN = re.compile(r"[a-zåäö0-9]+")
 
 
@@ -50,19 +52,29 @@ class Catalog:
         return out
 
 
-@lru_cache(maxsize=1)
 def load() -> Catalog:
+    # functools.lru_cache alone allows simultaneous first calls to execute the
+    # wrapped function. Hold this lock around the cache lookup as well as build.
+    with _INIT_LOCK:
+        return _load()
+
+
+@lru_cache(maxsize=1)
+def _load() -> Catalog:
     """Local: data/catalog.json. On Vercel (no raw data in the repo, by Valio's data terms) the
     catalogue is built on cold start from Valio's own download API into /tmp."""
     p = ROOT / "data" / "catalog.json"
     if not p.exists():
         import os
         from . import build_catalog
-        tmp = Path("/tmp/chefdata")
-        p = tmp / "catalog.json"
-        if not p.exists():
-            build_catalog.download_raw(tmp / "raw")
-            build_catalog.main(tmp / "raw", p)
+        TEMP.mkdir(parents=True, exist_ok=True)
+        p = TEMP / "catalog.json"
+        # Multiple worker processes can share /tmp in one runtime instance.
+        with (TEMP / "catalog.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if not p.exists():
+                build_catalog.download_raw(TEMP / "raw")
+                build_catalog.main(TEMP / "raw", p)
     return Catalog(p)
 
 

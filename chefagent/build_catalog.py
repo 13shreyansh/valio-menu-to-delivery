@@ -7,7 +7,7 @@ Pack size (kg or L per sales unit) is estimated statically here from the name an
 GS1 unit conversions. At order time the agent prefers the authoritative figure
 derived from the price API (catalogPrice / comparisonPrice).
 """
-import csv, json, re, sys, time
+import csv, json, re, sys, time, uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -104,9 +104,11 @@ def download_raw(raw_dir: Path):
         started = time.time()
         with httpx.stream("GET", base + path, headers=h, follow_redirects=True, timeout=120) as r:
             r.raise_for_status()
-            with open(raw_dir / name, "wb") as f:
+            temporary = raw_dir / (name + "." + uuid.uuid4().hex + ".tmp")
+            with open(temporary, "wb") as f:
                 for chunk in r.iter_bytes(1 << 20):
                     f.write(chunk)
+            temporary.replace(raw_dir / name)
             record={"method":"GET","path":path,"status":r.status_code,"source":"Valio catalogue download","at":started,"duration_ms":round((time.time()-started)*1000)}
             if name == "products.json":record["product_count"]=len(json.loads((raw_dir/name).read_text()))
             DOWNLOAD_AUDIT.append(record)
@@ -161,7 +163,9 @@ def main(raw: Path = RAW, out: Path = ROOT / "data" / "catalog.json"):
         })
     out_path = out
     out = [o for o in rows if o["food"] or o["id"] in {s for v in subs.values() for s in v}]
-    out_path.write_text(json.dumps(out, ensure_ascii=False))
+    temporary = out_path.with_name(out_path.name + "." + uuid.uuid4().hex + ".tmp")
+    temporary.write_text(json.dumps(out, ensure_ascii=False))
+    temporary.replace(out_path)
     food = [o for o in out if o["food"]]
     print(f"{len(rows)} products, {len(food)} food; pack known for "
           f"{sum(1 for o in food if o['pack'])}/{len(food)} food items", file=sys.stderr)

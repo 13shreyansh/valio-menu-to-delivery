@@ -84,6 +84,26 @@ for (const [name, viewport] of [
     await expect(
       p.getByRole("button", { name: "Place order", exact: true }),
     ).toBeDisabled();
+    if (viewport.width === 390) {
+      const bounds = await p
+        .locator(".order-table tr")
+        .first()
+        .evaluate((row) => {
+          const link = row
+            .querySelector('[data-action="why"]')
+            .getBoundingClientRect();
+          const box = row.getBoundingClientRect();
+          return {
+            left: link.left,
+            right: link.right,
+            rowLeft: box.left,
+            rowRight: box.right,
+          };
+        });
+      expect(bounds.left).toBeGreaterThanOrEqual(bounds.rowLeft);
+      expect(bounds.right).toBeLessThanOrEqual(bounds.rowRight);
+      expect(bounds.right).toBeLessThanOrEqual(viewport.width);
+    }
     await shot(p, `${name}-order-three-checks`);
     for (const id of ["swap", "pack", "budget"]) {
       await p

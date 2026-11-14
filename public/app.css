@@ -1451,6 +1451,8 @@ pre {
     animation: none !important;
   }
 }
-.order-table td:last-child {
-  min-width: 76px;
+@media (min-width: 701px) {
+  .order-table td:last-child {
+    min-width: 76px;
+  }
 }
