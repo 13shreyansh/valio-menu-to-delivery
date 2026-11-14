@@ -1064,13 +1064,18 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (action === "add") {
-    if (S.order.status === "placed") {
-      S.order = await api("/drafts", {});
-      localStorage.setItem("aurora-draft", S.order.draft_id);
-    }
-    const added = await mutate("add", value);
-    if (added) S.notice = "Added to next week’s order.";
-    render();
+    S.notice = "";
+    await task(async () => {
+      if (S.order.status === "placed") {
+        S.order = await api("/drafts", {});
+        localStorage.setItem("aurora-draft", S.order.draft_id);
+      }
+      S.order = await api("/drafts/" + S.order.draft_id + "/change", {
+        action: "add",
+        value,
+      });
+      S.notice = "Added to next week’s order.";
+    });
     return;
   }
   if (action === "copy") {

@@ -546,6 +546,7 @@ test("a rejected catalogue addition never displays a success notice", async () =
   account(w);
   Object.assign(w.hooks.state, {
     path: "/catalogue",
+    notice: "Added to next week’s order.",
     catalogueLoaded: true,
     catalogue: [
       {
