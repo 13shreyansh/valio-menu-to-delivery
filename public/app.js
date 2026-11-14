@@ -46,6 +46,7 @@ let order = null,
   audioStream = null,
   audioContext = null,
   recordingPending = false,
+  listenedTokens = [],
   releaseRequested = false;
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 function notice(message) {
@@ -260,7 +261,13 @@ async function tell(text, media) {
   clearNotice();
   thinking(text || "Reading your recording…");
   try {
-    const data = await api("/tell", { token: order.token, text, media });
+    const data = await api("/tell", {
+      token: order.token,
+      text,
+      media,
+      listened_tokens: listenedTokens,
+    });
+    listenedTokens = [];
     if (data.reading?.status !== "readable") {
       notice(
         data.reading?.reason ||
@@ -520,7 +527,10 @@ async function startRecording() {
       audioStream.getTracks().forEach((t) => t.stop());
       return;
     }
-    let chunks = [];
+    let chunks = [],
+      partialBusy = false,
+      partialCount = 0;
+    listenedTokens = [];
     let mime = ["audio/webm", "audio/mp4", "audio/ogg"].find((t) =>
       MediaRecorder.isTypeSupported(t),
     );
@@ -528,8 +538,36 @@ async function startRecording() {
       audioStream,
       mime ? { mimeType: mime } : undefined,
     );
-    recorder.ondataavailable = (e) => {
+    recorder.ondataavailable = async (e) => {
       if (e.data.size) chunks.push(e.data);
+      if (
+        recorder.state !== "recording" ||
+        partialBusy ||
+        partialCount >= 4 ||
+        chunks.length % 3 !== 0
+      )
+        return;
+      partialBusy = true;
+      partialCount++;
+      try {
+        const part = new Blob(chunks, { type: recorder.mimeType });
+        const result = await api("/listen", {
+          token: order.token,
+          media: {
+            mime: part.type.split(";")[0],
+            data: bytes64(await part.arrayBuffer()),
+          },
+        });
+        if (recorder.state === "recording") {
+          if (result.transcript)
+            $("#live-transcript").textContent = result.transcript;
+          listenedTokens.push(result.call_token);
+        }
+      } catch {
+        /* A partial recording can end mid-word. Final audio is checked on release. */
+      } finally {
+        partialBusy = false;
+      }
     };
     recorder.onstop = async () => {
       audioStream.getTracks().forEach((t) => t.stop());
@@ -552,7 +590,8 @@ async function startRecording() {
         data: bytes64(await blob.arrayBuffer()),
       });
     };
-    recorder.start();
+    recorder.start(1000);
+    $("#live-transcript").textContent = "Listening… release to send";
     $("#tell-panel").hidden = false;
     $("#tell-content").hidden = true;
     $("#thinking").hidden = true;
@@ -647,6 +686,10 @@ const dishNames = {
 };
 function renderPhoto() {
   let good = photo.status === "readable",
+    correctable =
+      photo.status === "uncertain" &&
+      photo.dishes.length > 0 &&
+      Number.isInteger(photo.covers),
     prior = order.wedding?.dishes || [];
   let added = photo.dishes.filter(
     (d) => !prior.some((p) => p.recipe === d.recipe),
@@ -657,7 +700,7 @@ function renderPhoto() {
   $("#photo-panel").hidden = false;
   $("#photo-panel").innerHTML =
     `<div class="photo-heading"><h2>${good ? "Check the final menu" : "Couldn't read it"}</h2><button class="icon-button" data-close="photo-panel" aria-label="Close photo">×</button></div><div class="photo-grid"><div class="photo-image"><img src="${photoSrc}" alt="Chef's final wedding menu on a whiteboard"><div id="photo-outline" class="photo-outline" hidden></div></div><div class="photo-reading"><h3>What we read</h3>${
-      good
+      good || correctable
         ? `${removed.map((d) => `<p>Removed: ${esc(dishNames[d.recipe])}</p>`).join("")}${photo.dishes
             .map((d, i) => {
               let old = prior.find((p) => p.recipe === d.recipe);
@@ -681,8 +724,18 @@ function renderPhoto() {
             })
             .join("")}`
         : `<p>${esc(photo.reason)}</p>`
-    }${photo.read.map((r, i) => `<button class="read-word${r.uncertain ? " uncertain" : ""}" data-word="${i}"><span>${esc(r.word)}</span>${r.uncertain ? '<span class="meta">Check this word</span>' : ""}</button>`).join("")}<p class="meta">${good ? "Check the dish and portion count in place. Tap handwriting to see it on the photo." : "Here’s what I saw: " + esc(photo.transcript || "No legible words. No changes have been made to your order.")}</p></div></div><div class="photo-actions"><button class="outline" id="retry-photo">Choose another photo</button><button class="solid" id="apply-photo" ${good ? "" : "disabled"}>Update order</button></div>`;
+    }${photo.read.map((r, i) => `<button class="read-word${r.uncertain ? " uncertain" : ""}" data-word="${i}"><span>${esc(r.word)}</span>${r.uncertain ? '<span class="meta">Check this word</span>' : ""}</button>`).join("")}<p class="meta">${good ? "Check the dish and portion count in place. Tap handwriting to see it on the photo." : "Here’s what I saw: " + esc(photo.transcript || "No legible words. No changes have been made to your order.")}</p></div></div>${correctable ? `<label class="confirm-words"><input type="checkbox" id="confirm-words"> I checked the dishes and portions against this photo.</label>` : ""}<div class="photo-actions"><button class="outline" id="retry-photo">Choose another photo</button><button class="solid" id="apply-photo" ${good ? "" : "disabled"}>Update order</button></div>`;
   $("#retry-photo").onclick = () => $("#photo-file").click();
+  if ($("#confirm-words"))
+    $("#confirm-words").onchange = () => {
+      const checked = $("#confirm-words").checked;
+      $("#apply-photo").disabled = !checked;
+      if (checked) {
+        photo.status = "readable";
+        photo.uncertain = [];
+        photo.read.forEach((r) => (r.uncertain = false));
+      }
+    };
   $$("[data-word]").forEach(
     (b) => (b.onclick = () => highlightWord(Number(b.dataset.word))),
   );
@@ -729,6 +782,7 @@ async function applyPhoto(expectedRun = null) {
       token: order.token,
       read_token: readToken,
       reading: photo,
+      confirmed: !!$("#confirm-words")?.checked,
     });
     if (expectedRun !== null && expectedRun !== storyRun)
       throw new Error("STOP_STORY");

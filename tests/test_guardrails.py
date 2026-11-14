@@ -43,7 +43,7 @@ def test_new_allergen_never_enters_order(wedding_state,supplier):
     assert any(c['id'].startswith('gap-') for c in o['checks'])
 
 def test_unavailable_products_cannot_be_approved(wedding_state,supplier):
-    supplier.blocked={'461907','461883'}
+    supplier.blocked={'461907','469560'}
     o=k.response(wedding_state)
     gap=next(c for c in o['checks'] if c['kind']=='gap')
     with pytest.raises(k.KitchenError): k.act(o['token'],'approve',gap['id'])
@@ -89,3 +89,14 @@ def test_expired_cache_is_not_current(monkeypatch,tmp_path):
 def test_catalogue_cannot_add_duplicate_planned_product(wedding_state):
     with pytest.raises(k.KitchenError,match='already added'):
         k.act(k.seal(wedding_state),'add','471970')
+
+def test_passed_cutoff_candidate_excluded(wedding_state,monkeypatch,supplier):
+    previous=supplier.availability
+    def late(self,date,ids):
+        out=previous(self,date,ids)
+        if '469560' in out: out['469560']['closing_time']='2020-01-01T00:00:00+0000'
+        return out
+    monkeypatch.setattr(supplier,'availability',late)
+    o=k.build(wedding_state)
+    assert not o['can_place']
+    assert not any(r['product_id']=='469560' for r in o['rows'])

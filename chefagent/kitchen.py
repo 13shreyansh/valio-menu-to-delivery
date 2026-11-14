@@ -114,6 +114,9 @@ def build(state, fresh=False):
                     reasons.append({'product': pid, 'reason': '; '.join(violations), 'decision': 'Excluded'})
                     continue
                 if not av.get('orderable') or (av.get('available_date') or '9999') > day: continue
+                if cutoff_passed(av.get('closing_time')):
+                    reasons.append({'product':pid,'reason':'Supplier cut-off passed for this delivery.','decision':'Excluded'})
+                    continue
                 try: pack, source = pack_for(p,pr)
                 except KitchenError: continue
                 units = round_units(net, pack)
@@ -150,7 +153,7 @@ def build(state, fresh=False):
                 row['change']='Swapped'
                 original = cat.get(INGREDIENTS['fish']['ids'][0])
                 row['change_reason']='was '+(original['name_fi'] or original['name'])
-                row['reason']='Salmon has no confirmed delivery in time. Trout cubes keep the recipe cut, cooking method, weight and fish allergen. No new allergens.'
+                row['reason']='Salmon has no confirmed delivery in time. Thaw the raw trout fillet chilled and cut 150 g portions before gently poaching, as the kitchen recipe requires. Same fish weight, no new allergens.'
                 swaps.append(row)
             if role == 'cream' and p['id'] != INGREDIENTS['cream']['ids'][0]:
                 alternatives = [c for c in candidates if c[0]['id']==INGREDIENTS['cream']['ids'][0]]
@@ -205,7 +208,7 @@ def build(state, fresh=False):
             rows.append(removed)
     if swaps:
         first=swaps[0]
-        checks.append({'id':'swap','kind':'swap','text':f'Salmon has no confirmed delivery in time. Swap to {first["name"]}: same weight and cooking method, no new allergens.',
+        checks.append({'id':'swap','kind':'swap','text':f'Salmon has no confirmed delivery in time. Swap to {first["name"]}: cut 150 g portions in the kitchen, then gently poach. Same fish weight, no new allergens.',
                        'button':'OK, swap','alternative':'Change menu','row_ids':[r['id'] for r in swaps], 'can_approve':True,
                        'proof':'Fish → fish. No nuts, peanuts or new may-contain allergens.'})
     if cream_rows:

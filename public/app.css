@@ -1634,3 +1634,16 @@ main {
     height 220ms var(--ease),
     opacity 150ms var(--ease);
 }
+.confirm-words {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  font-size: 15px;
+  min-height: 56px;
+}
+.confirm-words input {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}

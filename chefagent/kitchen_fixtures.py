@@ -23,14 +23,14 @@ KITCHEN = {
 }
 # Each role has an intentionally narrow, recipe-specific catalogue shortlist.
 INGREDIENTS = {
-    'fish': {'ids': ['461907', '461883'], 'unit': 'kg'},
+    'fish': {'ids': ['461907', '469560'], 'unit': 'kg'},
     'whitefish': {'ids': ['469335'], 'unit': 'kg'},
     'potato': {'ids': ['471970'], 'unit': 'kg'},
     'carrot': {'ids': ['475454'], 'unit': 'kg'},
     'onion': {'ids': ['475561'], 'unit': 'kg'},
     'cream': {'ids': ['464699', '465193'], 'unit': 'l'},
     'butter': {'ids': ['463437'], 'unit': 'kg'},
-    'milk': {'ids': ['464119'], 'unit': 'l'},
+    'milk': {'ids': ['463380'], 'unit': 'l'},
     'oats': {'ids': ['460200'], 'unit': 'kg'},
     'egg': {'ids': ['463883'], 'unit': 'kg'},
     'cheese': {'ids': ['474963'], 'unit': 'kg'},
@@ -41,7 +41,7 @@ INGREDIENTS = {
 }
 STOCK = {'fish': 21, 'potato': 8, 'carrot': 3, 'onion': 1,
          'cream': 1, 'butter': 1, 'milk': 8, 'oats': 2,
-         'egg': 2, 'cheese': 1, 'flour': 0, 'sugar': 0, 'lemon': 0, 'dill': .4,
+         'egg': 2, 'cheese': 1, 'flour': 0, 'sugar': 0, 'lemon': 0, 'dill': 1,
          'whitefish': 0}
 # All existing fish is frozen, reserved chronologically for the weekly soup.
 RECIPES = {
@@ -49,7 +49,7 @@ RECIPES = {
     'staff_porridge': {'name': 'Staff breakfast porridge', 'ingredients': {'oats': 45, 'cream': 35}},
     'soup': {'name': 'Lohikeitto', 'ingredients': {'fish': 150, 'potato': 180, 'carrot': 60, 'onion': 25, 'cream': 60, 'dill': 3}},
     'vegetables': {'name': 'Roasted vegetables', 'ingredients': {'potato': 200, 'carrot': 150, 'onion': 35, 'cream': 60, 'butter': 15}},
-    'salmon': {'name': 'Salmon with dill potatoes', 'ingredients': {'fish': 150, 'potato': 180, 'carrot': 80, 'cream': 45, 'butter': 15, 'dill': 3, 'lemon': 10}},
+    'salmon': {'name': 'Poached salmon with dill potatoes', 'method': 'Portion raw fish to 150 g, thaw chilled, gently poach. For a fillet swap, cut portions in the kitchen before cooking.', 'ingredients': {'fish': 150, 'potato': 180, 'carrot': 80, 'cream': 45, 'butter': 15, 'dill': 3, 'lemon': 10}},
     'tart': {'name': 'Lemon tart', 'ingredients': {'flour': 40, 'butter': 25, 'sugar': 35, 'egg': 35, 'lemon': 30, 'cream': 30}},
     'whitefish': {'name': 'Paistettu siika', 'ingredients': {'whitefish': 150, 'potato': 180, 'carrot': 80, 'cream': 45, 'butter': 15, 'dill': 3, 'lemon': 10}},
     'cheeseboard': {'name': 'Juustolautanen', 'ingredients': {'cheese': 80}},
