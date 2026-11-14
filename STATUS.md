@@ -1,18 +1,23 @@
-VALIO / 2026-11-14 21:31 EET / app commit 5388802 / https://valio-menu-to-delivery.vercel.app
+VALIO / 2026-11-15 00:01 EET / app commit ff7f325 / https://valio-menu-to-delivery.vercel.app
+
 DONE:
 
-- Deployed the Kitchen Sheet, wedding changes, three approval checks, photo review, demo confirmation and decision receipt. MCP preserved.
-- Live Valio/Gemini tests passed, including spoken understanding and the recorded-story backend.
-- Added regression coverage for order maths, budget locking, unsafe supply and stale approvals.
+- Isolated automated web, Ask Valio and MCP runs; archived test orders. Aurora's November spend is measured at €2,592.37, with €3,407.63 remaining.
+- Fixed card spacing, approved titles, receipt wording, phone clipping, repeated drafts and concurrent catalogue loading.
+- Redeployed. Ordering flows, HTTPS MCP, media, guardrails and all-page screenshot checks pass.
 
-NUMBERS: dev measured 35 backend tests, 10 DOM tests, 29 expected order rows, 3/3 readable boards and 2/2 unreadable boards; held-out: not run; baseline measured €675.13; wedding measured €1,172.38; final measured €1,517.83.
+NUMBERS: dev measured 65 Python tests, 26 DOM tests, 2 deployed E2E passes, 36 page screenshots and 0 console errors; held-out measured 0 runs; baseline measured 46 products, 3 deliveries, €1,293.92.
 
-SCREENSHOTS: none captured; inbuilt browser unavailable.
+SCREENSHOTS: [desktop](/Users/shreyansh/Documents/ChatGPT/Junction/valio/artifacts/e2e/job03/desktop-dashboard.png), [390px](/Users/shreyansh/Documents/ChatGPT/Junction/valio/artifacts/e2e/job03/phone-dashboard.png), [approved titles](/Users/shreyansh/Documents/ChatGPT/Junction/valio/artifacts/e2e/phone-approved-titles.png).
 
-REVIEW: 6 Astra two-pass backend/DOM pass; stock, cut-off, cancellation and photo-state defects fixed. Full browser acceptance blocked.
+REVIEW: [Separate 6 Astra two-pass PASS](/Users/shreyansh/Documents/ChatGPT/Junction/valio/artifacts/review-job03.md). Findings fixed; binding muted-text contrast limitation documented. [Local TASTE-GATE PASS](/Users/shreyansh/Documents/ChatGPT/Junction/valio/artifacts/TASTE-GATE-job03.md).
 
-NEXT: Verify the deployed story at the specified desktop, tablet and 390px widths; capture screenshots and test the microphone.
+MCP: https://valio-menu-to-delivery.vercel.app/mcp/
+
+Spec gaps I filled: Historical dates and covers are authored kitchen data; totals use real current Valio quotes through the order flow. Missing arrival times show “to confirm”. Approved titles wrap on phones. Local TASTE-GATE follows Chief/spec/floor checks; no separate rubric was supplied.
+
+NEXT: Record the real Claude connector clip and check a physical microphone.
 
 NEEDS DECISION: none
 
-BLOCKED: IAB reports “The browser access host is unavailable”; viewport, browser-console and physical-microphone acceptance remain unverified.
+BLOCKED: none for Job 03. IAB was unavailable; verification used the required headless browser.

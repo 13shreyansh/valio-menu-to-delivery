@@ -187,6 +187,7 @@ const fs = require("node:fs");
     await p
       .getByRole("button", { name: "Account events", exact: true })
       .click();
+    await expect(p.locator(".events")).toBeVisible({ timeout: 30000 });
     await shot("bell");
     await p
       .getByRole("button", { name: "Account events", exact: true })
