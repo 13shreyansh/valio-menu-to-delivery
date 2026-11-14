@@ -85,6 +85,19 @@ async def substitutes(req: Request):
     return service.find_substitutes(b["product_id"], b["delivery_date"], b.get("diet"), b.get("customer", "HC-1001"))
 
 
+@app.get("/api/health")
+def health(deep: int = 0):
+    """Liveness. deep=1 also loads the catalogue and prices one product through Valio's API."""
+    out = {"ok": True, "valio_key": bool(os.environ.get("VALIO_API_KEY")), "llm_key": bool(os.environ.get("GEMINI_API_KEY"))}
+    if deep:
+        from chefagent.catalog import load
+        cat = load()
+        out["catalogue_food_items"] = len(cat.food)
+        q = service.quote([cat.food[0]["id"]], "2026-11-16")
+        out["sample_quote_ok"] = bool(q)
+    return out
+
+
 @app.get("/api/eval")
 def eval_results():
     p = ROOT / "public" / "eval.json"
