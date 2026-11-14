@@ -34,6 +34,20 @@ class Disruptions:
         return avail
 
 
+def _future_or_none(ts):
+    """The mock API returns some order cut-offs that are already in the past. Showing 'order by Thursday'
+    for a Monday delivery would mislead a chef, so a past cut-off is dropped (and logged nowhere as a rule)."""
+    if not ts:
+        return None
+    try:
+        import datetime as _dt
+        t = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        now = _dt.datetime.now(t.tzinfo) if t.tzinfo else _dt.datetime.now()
+        return ts if t > now else None
+    except ValueError:
+        return ts
+
+
 class ValioAPI:
     def __init__(self, customer="HC-1001", disruptions: Disruptions | None = None, offline=False):
         self.customer = customer
@@ -100,6 +114,6 @@ class ValioAPI:
             orderable = bool(sl) and not row.get("salesBlock") and not sl.get("salesBlock") and sl.get("availableAmount", 0) > 0
             res[pid] = {"orderable": orderable, "available_date": sl.get("availableDate") if sl else None,
                         "amount": sl.get("availableAmount") if sl else 0, "unit": sl.get("salesUnit") if sl else None,
-                        "model": row.get("logisticModel"), "closing_time": row.get("closingTime"),
+                        "model": row.get("logisticModel"), "closing_time": _future_or_none(row.get("closingTime")),
                         "stock_known": row.get("logisticModel") == "Stock", "disrupted": row.get("_disrupted")}
         return res

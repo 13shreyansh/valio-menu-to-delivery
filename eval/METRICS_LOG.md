@@ -7,11 +7,11 @@ Gold edits are logged as gold fixes. Held-out is run once per frozen version.
 
 | Version | Change and why | Cookable | Ingredient recall | Allergen/diet violations | Qty within ±30% | Extra lines (€) |
 |---|---|---|---|---|---|---|
-| bm25_top1 (floor) | Same recipe step, top keyword hit, no LLM pick, no guardrails | 4/37 (5%) | 0.69 | 16 | | |
-| no_guardrails | Full agent with the allergen/diet filter switched off | ~11/37 | | 11 | | |
+| bm25_top1 (floor) | Same recipe step, top keyword hit, no LLM pick, no guardrails | 3/37 (8%) | 0.69 | 16 | 47% | 59 (€4,925) |
+| no_guardrails | Full agent with the allergen/diet filter switched off | 11/37 (30%) | 0.84 | 11 | 56% | 28 (€1,153) |
 | v0 | First full agent | 46% | 85.5% | 0 | 55% | 27 (€939) |
 | v1 | Pick prompt accepts prepared forms of the same ingredient (diced onion, liquid egg, UHT). Only salt, pepper, oil and water count as pantry: spices, stock, sugar and herbs are bought | 62% | 91.1% | 0 | | 63 (€1,754) |
-| v2 | Pack size: trust the printed pack when the price-API ratio agrees within 3% (that ratio is rounded to cents). Direct requests are never rounded below the asked quantity | see below | | | | |
+| v2 | Pack size: trust the printed pack when the price-API ratio agrees within 3% (that ratio is rounded to cents). Direct requests are never rounded below the asked quantity | 62% (no change, no regression) | 91.1% | 0 | 57% | 63 (€1,754) |
 
 Error analysis after v1 (first failure per dish, 14 failures):
 - **Retrieval or pick** (6): onion ×2, mushroom ×2 in the nut-free kitchen, pork stew cut picked as beef, lemon picked as vinegar.
@@ -29,4 +29,12 @@ This eval follows Valio's handout: a buyer's free-text request runs through inta
 | r1 | **Criteria fix** (grader, not agent): "refuse" now means nothing is committed without a human. A safe alternative held for sign-off passes, because reading r0's traces showed the agent offering a nut-free swap or an oat drink for approval, which a buyer would want | 0.92 | | 6/7 | 3/3 | 2/2 | 0 |
 | r2 | Bug: needs never carried the `direct` flag, so the cheapest-option rule and exact quantities did not fire. Also the 10 kg vs 9.98 kg pack fix from v2 | 1.00 | | 7/7 | 3/3 | 2/2 | 0 |
 | r3 | Replaced a case that could not exercise its rule (direct requests have no "first choice" to swap). Added a total salmon stock-out (refuse) and 2,000 L of milk over the limit (escalate) | 1.00 | | 7/7 | 3/3 | 3/3 | 0 |
-| r3-k3 | Same agent, 3 fresh LLM samples per case (no cache) | | | | | | |
+| r3-k3 | Same agent, 3 fresh LLM samples per case (no cache) | 1.00 | **1.00 (pass^3)** | 7/7 | 3/3 | 3/3 | 0 |
+
+## C. Valio-side mandate check (submit_order)
+
+Before: submit only re-checked allergens, substitutions and the spend limit, using the buyer's own prices, so a draft with an
+estimated pack size (R4) or a may-contain flag (R3) could be placed without a human. Now submit re-prices every line through
+Valio's price API (a changed or tampered price is rejected: the commitment is at Valio's fixed price), re-checks delivery by
+the date, and applies R1 to R4 itself. Tested: a tampered unit price is rejected; 1,000 L of milk for Fell Lodge (EUR 800 limit)
+is held until approved_by is given.

@@ -11,16 +11,17 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header class="top">
   <div class="brand">
-    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--ink)"/><path d="M9 18h14M11 18c0-4 2-7 5-7s5 3 5 7M16 9v2" stroke="var(--paper)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M8 22h16" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round"/></svg>
-    <div><div class="brand-name">Menu&nbsp;to&nbsp;Delivery</div><div class="brand-sub">a kitchen agent for Valio Aimo</div></div>
+    <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--ink)"/><path d="M9 18h14M11 18c0-4 2-7 5-7s5 3 5 7M16 9v2" stroke="var(--paper)" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M8 22h16" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round"/></svg>
+    <div><div class="brand-name">Menu&nbsp;to&nbsp;Delivery</div><div class="brand-sub">kitchen agent · Valio Aimo webshop</div></div>
   </div>
-  <nav class="tabs" role="tablist">
-    <button class="tab active" data-view="order" role="tab">Order</button>
-    <button class="tab" data-view="audit" role="tab">Audit trail</button>
-    <button class="tab" data-view="agents" role="tab">For agents (MCP)</button>
-    <button class="tab" data-view="eval" role="tab">How we test it</button>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab active" data-view="order" role="tab" aria-selected="true">Order</button>
+    <button class="tab" data-view="audit" role="tab" aria-selected="false">Decision log<span class="tab-n hidden" id="audit-n"></span></button>
+    <button class="tab" data-view="agents" role="tab" aria-selected="false">For agents (MCP)</button>
+    <button class="tab" data-view="eval" role="tab" aria-selected="false">How we test it</button>
   </nav>
   <label class="kitchen-pick">
     <span>Kitchen</span>
@@ -28,52 +29,76 @@
   </label>
 </header>
 
-<main>
+<main id="main" data-stage="landing">
 <!-- ============ ORDER ============ -->
 <section id="view-order" class="view active">
-  <div class="layout">
-    <aside class="menu-pane card">
-      <div class="pane-head">
-        <h2>Next week's menu</h2>
-        <p class="muted">Chef writes the menu and covers. Everything after that is busy work, so the agent does it.</p>
-      </div>
-      <div class="samples" id="samples"></div>
-      <div id="services"></div>
-      <div class="row gap">
-        <button class="btn ghost" id="add-service">+ Add service</button>
-        <button class="btn ghost" id="paste-btn">Paste menu text</button>
-      </div>
-      <div id="paste-box" class="paste hidden">
-        <textarea id="paste-text" rows="6" placeholder="Tuesday lunch, 140 covers: lohikeitto; lihapullat & muusi; vegan lentil curry (60)&#10;Wednesday breakfast 220: scrambled eggs, oat porridge"></textarea>
-        <button class="btn" id="parse-btn">Read menu</button>
-      </div>
-      <div class="policy" id="policy"></div>
-      <button class="btn primary big" id="plan-btn">Build my Valio order</button>
-      <p class="fine">Prices and stock come live from Valio Aimo's Junction API for this customer. Nothing is ordered until you approve.</p>
-    </aside>
 
-    <section class="result-pane">
-      <div id="empty" class="empty card">
-        <div class="empty-art" aria-hidden="true">
-          <div class="step"><b>1</b>Menu &amp; covers</div><span>→</span>
-          <div class="step"><b>2</b>Recipes &amp; quantities</div><span>→</span>
-          <div class="step"><b>3</b>Valio products at your prices</div><span>→</span>
-          <div class="step"><b>4</b>One cart per delivery day</div>
-        </div>
-        <h3>The outcome that matters: when the truck arrives, you can cook every dish.</h3>
-        <p class="muted">Pick a sample menu on the left, or write your own, then build the order.</p>
-      </div>
+  <div class="hero" id="hero">
+    <p class="eyebrow">For hotel head chefs and purchasing</p>
+    <h1>Next week's menu in. One&nbsp;Valio order out.</h1>
+    <p class="lede">A week of menus turns into dozens of supplier lines, allergen checks, delivery cut-offs and sign-offs. The agent does that work at your own prices, and stops where your policy says a person decides.</p>
+  </div>
 
-      <div id="working" class="working card hidden" aria-live="polite">
-        <div class="spinner"></div>
+  <ol class="flow" id="flow" aria-label="How a request becomes an order">
+    <li data-state="idle"><span class="n" aria-hidden="true">1</span><div><div class="t">Request</div><div class="s"></div></div></li>
+    <li data-state="idle"><span class="n" aria-hidden="true">2</span><div><div class="t">Lookup</div><div class="s"></div></div></li>
+    <li data-state="idle"><span class="n" aria-hidden="true">3</span><div><div class="t">Order</div><div class="s"></div></div></li>
+    <li data-state="idle"><span class="n" aria-hidden="true">4</span><div><div class="t">Approval</div><div class="s"></div></div></li>
+  </ol>
+
+  <div class="workspace">
+    <div class="entry" id="entry">
+      <h2 class="entry-title">Change the request</h2>
+
+      <section class="card entry-card" id="entry-menu" aria-labelledby="h-menu">
+        <div class="entry-kicker">Start here</div>
+        <h2 id="h-menu">Plan from a menu</h2>
+        <p class="muted">Pick a sample week, or paste your own menu with covers.</p>
+        <div class="samples" id="samples" role="group" aria-label="Sample menus"></div>
+        <details class="editor" id="editor">
+          <summary><span id="editor-sum">Review or edit the menu lines</span></summary>
+          <div id="services"></div>
+          <div class="row gap">
+            <button class="btn ghost small" id="add-service" type="button">+ Add service</button>
+            <button class="btn ghost small" id="paste-btn" type="button">Paste menu text</button>
+          </div>
+          <div id="paste-box" class="paste hidden">
+            <label class="sr" for="paste-text">Menu text</label>
+            <textarea id="paste-text" rows="5" placeholder="Tuesday lunch, 140 covers: lohikeitto; lihapullat & muusi; vegan lentil curry (60)&#10;Wednesday breakfast 220: scrambled eggs, oat porridge"></textarea>
+            <button class="btn small" id="parse-btn" type="button">Read menu</button>
+          </div>
+        </details>
+        <button class="btn primary big" id="plan-btn" type="button">Build my Valio order</button>
+      </section>
+
+      <section class="card entry-card" id="entry-quick" aria-labelledby="h-quick">
+        <div class="entry-kicker">Or, in one line</div>
+        <h2 id="h-quick">Quick request</h2>
+        <p class="muted">Know what you need? Say it as you would on the phone.</p>
+        <label class="sr" for="quick-text">Your request</label>
+        <textarea id="quick-text" rows="2">1,000 litres of lactose-free milk by Monday</textarea>
+        <div class="quick-ex" id="quick-ex" role="group" aria-label="Example requests"></div>
+        <button class="btn primary big" id="quick-btn" type="button">Find, price and order it</button>
+      </section>
+
+      <div class="policy" id="policy" aria-live="polite"></div>
+      <p class="fine entry-fine">Prices and stock come live from Valio Aimo's API for this customer. Nothing is ordered until you approve.</p>
+    </div>
+
+    <section class="result-pane" aria-live="polite">
+      <div id="working" class="working card hidden">
+        <div class="work-head"><div class="spinner" aria-hidden="true"></div>
+          <div><h3 id="work-title">Building your order</h3><p class="muted" id="work-sub">Live prices and stock from Valio. Usually 20 to 90 seconds.</p></div>
+          <div class="elapsed" id="elapsed" aria-hidden="true">0 s</div></div>
         <ol id="work-steps">
-          <li>Reading the menu and writing recipe cards</li>
-          <li>Scaling every ingredient to covers</li>
-          <li>Searching 12,643 Valio food products</li>
-          <li>Removing products that break your allergen rules</li>
-          <li>Checking your prices and stock for the delivery day</li>
-          <li>Finding substitutes for anything that can't arrive in time</li>
-          <li>Applying your approval rules</li>
+          <li data-flow="0">Reading the request and writing recipe cards</li>
+          <li data-flow="1">Scaling every ingredient to covers</li>
+          <li data-flow="1">Searching 12,643 Valio products (local catalogue, no API calls)</li>
+          <li data-flow="1">Removing products that break your allergen rules</li>
+          <li data-flow="1">Asking Valio's API for price and stock, shortlist only</li>
+          <li data-flow="1">Finding substitutes for anything that can't arrive in time</li>
+          <li data-flow="2">Building one cart per delivery day at fixed prices</li>
+          <li data-flow="3">Applying your approval policy</li>
         </ol>
       </div>
 
@@ -90,32 +115,36 @@
 <!-- ============ AUDIT ============ -->
 <section id="view-audit" class="view">
   <div class="card narrow">
+    <p class="eyebrow">Decision log</p>
     <h2>What the agent did, and why</h2>
-    <p class="muted">Readable by the chef and by Valio. Every hold cites the rule that caused it.</p>
+    <p class="muted">Written for the chef and for Valio. Every hold names the rule that caused it.</p>
     <div class="rules">
-      <div><b>R1</b> Spend over the kitchen's auto-approve limit → human tap</div>
-      <div><b>R2</b> Substitute ingredient (or any swap, if the kitchen asks) → human tap</div>
-      <div><b>R3</b> “May contain” an allergen the kitchen avoids → human tap</div>
-      <div><b>R4</b> Pack size not confirmed by Valio's price API → human tap</div>
-      <div><b>R5</b> Cannot be delivered in time → dish flagged, never silently dropped</div>
-      <div><b>Guardrail</b> Products that break allergen or diet rules are removed before the AI sees them</div>
+      <div><b>R1</b><span>Spend over the kitchen's auto-approve limit → human tap</span></div>
+      <div><b>R2</b><span>Substitute ingredient (or any swap, if the kitchen asks) → human tap</span></div>
+      <div><b>R3</b><span>“May contain” an allergen the kitchen avoids → human tap</span></div>
+      <div><b>R4</b><span>Pack size not confirmed by Valio's price API → human tap</span></div>
+      <div><b>R5</b><span>Cannot be delivered in time → dish flagged, never silently dropped</span></div>
+      <div><b>Guardrail</b><span>Products that break allergen or diet rules are removed before the AI sees them</span></div>
     </div>
-    <ol id="audit" class="audit"><li class="muted">Build an order to see its audit trail.</li></ol>
+    <div id="audit-head"></div>
+    <div class="audit-filters" id="audit-filters" role="group" aria-label="Filter the log"></div>
+    <ol id="audit" class="audit"><li class="audit-empty muted">Build an order to see its decision log.</li></ol>
   </div>
 </section>
 
 <!-- ============ AGENTS ============ -->
 <section id="view-agents" class="view">
   <div class="card narrow">
+    <p class="eyebrow">Open by design</p>
     <h2>The same brain, open to any agent</h2>
     <p>Everything this page does is also an <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP</a> server, an open standard. A hotel chain's own procurement agent, Claude or ChatGPT can connect to it, and Valio still enforces each customer's prices, assortment and mandate on its own side.</p>
-    <div class="endpoint"><span>MCP endpoint</span><code id="mcp-url"></code><button class="btn ghost small" id="copy-mcp">Copy</button></div>
+    <div class="endpoint"><span>MCP endpoint</span><code id="mcp-url"></code><button class="btn ghost small" id="copy-mcp" type="button">Copy</button></div>
     <div class="tools" id="tools"></div>
     <h3>Why Valio keeps control</h3>
     <ul class="bullets">
       <li><b>Customer-specific</b>: every price and stock call carries the customer id; only shortlisted products are quoted, as Valio's API guide asks.</li>
       <li><b>Mandate on Valio's side</b>: <code>submit_order</code> re-checks allergens, spend limit and substitutions, so a careless buyer agent cannot bypass them.</li>
-      <li><b>Explainable</b>: each draft order carries allocations to dishes and an audit trail with rule ids.</li>
+      <li><b>Explainable</b>: each draft order carries allocations to dishes and a decision log with rule ids.</li>
       <li><b>Share of wallet</b>: if ordering a whole menu from Valio takes one tap, kitchens buy more of it from Valio.</li>
     </ul>
   </div>
@@ -127,7 +156,7 @@
 </section>
 </main>
 
-<div id="toast" class="toast hidden"></div>
+<div id="toast" class="toast hidden" role="status"></div>
 <script src="/app.js"></script>
 </body>
 </html>

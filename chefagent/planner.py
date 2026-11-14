@@ -263,7 +263,8 @@ class Planner:
         order = apply_policy(lines, gaps, self.kitchen, self.audit)
         order["menu"] = [{"idx": it["idx"], "text": it["text"], "dish": it["dish_name"], "covers": it["covers"],
                           "date": it["date"], "meal": it["meal"], "diet": it.get("diet", []),
-                          "components": it["components"]} for it in items]
+                          "components": it["components"], "direct": bool(it.get("direct")),
+                          "ingredient": it.get("ingredient"), "qty": it.get("qty"), "unit": it.get("unit")} for it in items]
         return order
 
     def merge_lines(self, lines):

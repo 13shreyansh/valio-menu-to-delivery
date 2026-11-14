@@ -100,7 +100,8 @@ def plan_menu_order(services: list[dict], customer: str = "HC-1001", kitchen: di
     api = ValioAPI(customer=k["customer"], disruptions=disruptions)
     order = Planner(api, k).plan(services)
     cat = load_catalog()
-    order["api_usage"] = {"http_calls": api.calls,
+    looked = len(api.queried.get("/api/price", ()))
+    order["api_usage"] = {"http_calls": api.calls, "cached": api.calls == 0 and looked > 0,
                           "price_lookups": len(api.queried.get("/api/price", ())),
                           "availability_lookups": len(api.queried.get("/api/availability", ())),
                           "catalogue_size": len(cat.food),
@@ -117,16 +118,39 @@ def submit_order(delivery: dict, customer: str = "HC-1001", approved_by: str | N
     cat = load_catalog()
     problems, holds = [], []
     total = 0.0
+    date = delivery["date"]
+    api = ValioAPI(customer=k["customer"])
+    ids = [ln["product_id"] for ln in delivery["lines"]]
+    prices, avail = api.price(date, ids), api.availability(date, ids)
     for ln in delivery["lines"]:
         p = cat.get(ln["product_id"])
         if not p:
             problems.append(f'{ln["product_id"]}: unknown product'); continue
+        # R0 allergen / diet rules, re-derived from Valio's own product data (never trusted from the buyer)
         v = product_violations(p, ln.get("diet", []), pol)
         if v:
             problems.append(f'{p["name"]}: {"; ".join(v)}')
+        # fixed-price commitment: the buyer's price must equal Valio's quote for this customer and date
+        pr = prices.get(p["id"]) or {}
+        if pr.get("error") or pr.get("unit_price") is None:
+            problems.append(f'{p["name"]}: no price for {date}'); continue
+        if abs(float(ln.get("unit_price") or 0) - pr["unit_price"]) > 0.005:
+            problems.append(f'{p["name"]}: price changed (draft €{ln.get("unit_price")}, Valio quotes €{pr["unit_price"]}); re-plan')
+        av = avail.get(p["id"]) or {}
+        if not av.get("orderable") or (av.get("available_date") or "9") > date:
+            problems.append(f'{p["name"]}: not deliverable by {date}')
+        # R2 substitution, R3 may-contain, R4 pack size: same rules as the draft's policy step
         if ln.get("substitution") and (ln["substitution"].get("type") == "recipe" or pol.get("allow_substitutes") != "same_ingredient_auto"):
             holds.append(f'{p["name"]}: substitution needs approval')
-        total += float(ln.get("line_total") or 0)
+        mc = set(p["may_contain"]) & set(pol.get("free_from", []))
+        if mc:
+            holds.append(f'{p["name"]}: may contain {", ".join(sorted(mc))}')
+        if p["sales_unit"] != "KG":
+            _, src = Planner.pack_size(None, p, pr)
+            if "price API" not in src:
+                holds.append(f'{p["name"]}: pack size not confirmed by the price API')
+        total += pr["unit_price"] * float(ln.get("units") or 0)
+    # R1 spend limit, on Valio's own prices
     if total > pol["auto_approve_limit_eur"]:
         holds.append(f'total €{total:.2f} over auto-approve limit €{pol["auto_approve_limit_eur"]}')
     if problems:

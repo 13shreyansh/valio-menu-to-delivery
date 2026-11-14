@@ -42,9 +42,10 @@ See `eval/README.md` and `eval/METRICS_LOG.md`. There are two evals, both graded
 
 | | Floor (keyword top-1, no guardrails) | Agent |
 |---|---|---|
-| Dishes cookable (dev) | 5% | 62% (v1) |
+| Dishes cookable (dev) | 8% | 62% |
 | Allergen/diet violations | 16 | **0** |
-| Requests handled correctly (pass@1) | | 13/13 |
+| Requests handled correctly, every one of 3 fresh runs (pass^3) | | **13/13** |
+| False auto-approvals | | **0** |
 
 What still fails: fresh herbs that are out of stock (dill), and a few picks where the gold rules and the agent disagree. Those go to a chef via `eval/spot_checks.csv`.
 
