@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from mcp.server.transport_security import TransportSecuritySettings
 
 from chefagent import service, llm
+from chefagent.intake import parse_request
 from chefagent.mcp_server import mcp
 
 mcp_app = mcp.streamable_http_app(streamable_http_path="/", stateless_http=True, json_response=True,
@@ -37,19 +38,7 @@ app.mount("/mcp", mcp_app)
 
 SAMPLES = json.loads((ROOT / "public" / "samples.json").read_text()) if (ROOT / "public" / "samples.json").exists() else []
 
-PARSE_PROMPT = """A hotel kitchen sent a purchasing request: a menu for next week, a direct product request
-(e.g. "1,000 litres of lactose-free milk by Monday"), or both. Convert it to JSON.
-Today is Saturday 2026-11-14; "Monday" means 2026-11-16, etc. If no covers are given for a line,
-use the nearest covers mentioned for that meal, else 100.
-Text:
----
-{text}
----
-Return {{"services": [{{"date": "YYYY-MM-DD", "meal": short label,
-  "items": [ either a dish: {{"text": the menu line as written, "covers": int, "diet": subset of ["vegan","vegetarian","gluten-free","milk-free"]}}
-             or a direct product request: {{"text": the request as written, "direct": true, "ingredient": what to buy incl. requirements (e.g. "lactose-free milk"),
-               "search": [3-5 English+Finnish catalogue search phrases], "qty": number, "unit": "kg"|"l", "covers": 1, "diet": []}} ]}}]}}
-For a direct request, "date" is the date the goods must arrive (e.g. "by Monday" = 2026-11-16) and meal is "Delivery"."""
+
 
 
 @app.get("/api/kitchens")
@@ -60,8 +49,7 @@ def kitchens():
 @app.post("/api/parse-menu")
 async def parse_menu(req: Request):
     body = await req.json()
-    out = llm.ask_json(PARSE_PROMPT.format(text=body.get("text", "")[:4000]))
-    return out
+    return parse_request(body.get("text", ""))
 
 
 @app.post("/api/plan")

@@ -142,16 +142,22 @@ class Planner:
         if p["sales_unit"] == "KG":
             return 1.0, "unit is kg"
         if price and not price.get("error") and price.get("comparison_price"):
-            return round(price["unit_price"] / price["comparison_price"], 4), "price API (unit / comparison price)"
+            ratio = price["unit_price"] / price["comparison_price"]
+            # the comparison price is rounded to cents, so the ratio is approximate: when the pack size
+            # printed on the product agrees within 3%, trust the printed size (10 kg, not 9.98 kg)
+            if p.get("pack") and abs(p["pack"] - ratio) <= 0.03 * p["pack"]:
+                return p["pack"], "product pack size, confirmed by price API"
+            return round(ratio, 4), "price API (unit / comparison price)"
         if p.get("pack"):
             return p["pack"], "catalogue name/GS1 estimate"
         return None, "unknown"
 
     @staticmethod
-    def units_for(kg, pack, sales_unit):
+    def units_for(kg, pack, sales_unit, exact=False):
+        """exact=True for a direct request: the buyer's quantity is a commitment, never round below it."""
         if sales_unit == "KG":
             return round(math.ceil(kg * 10 - 1e-9) / 10, 1)
-        return max(1, math.ceil(kg / pack - 0.03))  # 3% tolerance before opening another pack
+        return max(1, math.ceil(kg / pack - (1e-9 if exact else 0.03)))  # menus: 3% tolerance before opening another pack
 
     # ---------------------------------------------------------------- 4. choose with price + availability
     def choose(self, need, ranked_ids):
@@ -185,7 +191,7 @@ class Planner:
             if reason:
                 tried.append({"id": pid, "name": p["name"], "why": reason})
                 continue
-            units = self.units_for(need["kg"], pack, p["sales_unit"])
+            units = self.units_for(need["kg"], pack, p["sales_unit"], exact=bool(need.get("direct")))
             if a.get("stock_known") and a.get("amount", 0) < units:
                 tried.append({"id": pid, "name": p["name"], "why": f'only {a["amount"]:g} {p["sales_unit"]} in stock'})
                 continue
@@ -233,7 +239,8 @@ class Planner:
                 n = needs.setdefault(key, {"ingredient": c["ingredient"], "search": list(c.get("search") or []),
                                            "form": c.get("form", "any"), "notes": c.get("notes", ""),
                                            "diet": list(it.get("diet") or []), "date": date, "kg": 0.0,
-                                           "dishes": set(), "alloc": [], "optional": True})
+                                           "dishes": set(), "alloc": [], "optional": True,
+                                           "direct": bool(it.get("direct"))})
                 if c.get("role") != "garnish":
                     n["optional"] = False
                 kg = grams * (1 if it.get("direct") else it["covers"]) / 1000.0
@@ -274,7 +281,7 @@ class Planner:
             if l["ingredient"].lower() not in m["ingredient"].lower():
                 m["ingredient"] += " / " + l["ingredient"]
             m["substitution"] = m["substitution"] or l["substitution"]
-            m["units"] = self.units_for(m["need_kg"], m["pack_kg"], m["sales_unit"])
+            m["units"] = self.units_for(m["need_kg"], m["pack_kg"], m["sales_unit"], exact=bool(m.get("direct") or l.get("direct")))
             m["ordered_kg"] = round(m["units"] * m["pack_kg"], 3)
             m["line_total"] = round(m["units"] * (m["unit_price"] or 0), 2)
             self.log("agent", "merge_lines", f'{m["name"]}: combined needs for {", ".join(m["dishes"])} into one line', product=m["product_id"])
@@ -329,7 +336,7 @@ class Planner:
                 "reliability": p.get("reliability"), "co2_per_kg": p.get("co2_per_kg"), "labels": p.get("labels", []),
                 "contains": p["contains"], "may_contain": p["may_contain"], "temp": p["temp"],
                 "allocations": need["alloc"], "substitution": substitution,
-                "alternatives": [x for x in ranked[:4] if x != p["id"]], "options": choice.get("options", [])}
+                "alternatives": [x for x in ranked[:4] if x != p["id"]], "options": choice.get("options", []), "direct": bool(need.get("direct"))}
         self.log("agent", "add_to_cart", f'{p["name"]} x {choice["units"]:g} {p["sales_unit"]} for {", ".join(sorted(need["dishes"]))}'
                  f' (need {need["kg"]:.2f} kg, pack {choice["pack"]:g} via {choice["pack_source"]})', product=p["id"])
         return line, None

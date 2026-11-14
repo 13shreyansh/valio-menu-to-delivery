@@ -27,7 +27,7 @@ def apply_policy(lines, gaps, kitchen, audit):
         for a in pol.get("free_from", []):
             if a in ln["may_contain"]:
                 flags.append({"rule": "R3", "text": f"May contain {a}"})
-        if not ln["pack_source"].startswith("price API") and ln["sales_unit"] != "KG":
+        if "price API" not in ln["pack_source"] and ln["sales_unit"] != "KG":
             flags.append({"rule": "R4", "text": f'Pack size estimated from catalogue ({ln["pack_kg"]:g} kg/L per {ln["sales_unit"]})'})
         ln["flags"] = flags
         ln["needs_approval"] = bool(flags)

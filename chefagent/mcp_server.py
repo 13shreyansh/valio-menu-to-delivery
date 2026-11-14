@@ -6,6 +6,7 @@
 from mcp.server.mcpserver import MCPServer
 
 from . import service
+from .intake import parse_request
 
 mcp = MCPServer(
     name="valio-aimo-kitchen",
@@ -41,6 +42,14 @@ def find_substitutes(product_id: str, delivery_date: str, diet: list[str] | None
 @mcp.tool(description="Turn a menu into a draft order. services = [{date: 'YYYY-MM-DD' (service day), meal, items: [{text: menu line as the chef wrote it, covers: int, diet: [tags]}]}]. Returns deliveries (lines grouped by delivery date with per-dish allocations), gaps, approval flags and an audit trail. Places nothing.")
 def plan_menu_order(services: list[dict], customer: str = "HC-1001") -> dict:
     return service.plan_menu_order(services, customer)
+
+
+@mcp.tool(description="One-call buyer request in plain language, e.g. 'I need 1,000 litres of lactose-free milk by Monday. Find an option that meets our requirements based on price and availability.' Parses it (menus work too), looks up only the shortlisted products, picks within the kitchen's rules (cheapest viable option for a direct request) and returns the draft order with options compared on price, reliability and CO2, the approval decision and the audit trail. Places nothing.")
+def request_order(text: str, customer: str = "HC-1001") -> dict:
+    parsed = parse_request(text)
+    order = service.plan_menu_order(parsed.get("services", []), customer)
+    order["parsed_request"] = parsed
+    return order
 
 
 @mcp.tool(description="Place one delivery of a draft order. Valio re-checks the mandate; returns placed, pending_approval (pass approved_by after a human taps approve) or rejected.")

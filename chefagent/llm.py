@@ -12,13 +12,16 @@ _lock = threading.Lock()
 STATS = {"calls": 0, "cached": 0, "tokens_in": 0, "tokens_out": 0}
 
 
+READ_CACHE = True   # set False for pass^k reliability trials (fresh LLM samples each run)
+
+
 def ask_json(prompt: str, system: str = "", model: str | None = None, thinking: str = "low", schema: dict | None = None, use_cache=True):
     model = model or MODEL
     key = hashlib.sha256(json.dumps([model, system, prompt, thinking, schema], sort_keys=True).encode()).hexdigest()
     path = CACHE_DIR / f"{key}.json"
     wpath = WRITE_DIR / f"{key}.json"
     for pth in (path, wpath):
-        if use_cache and pth.exists():
+        if use_cache and READ_CACHE and pth.exists():
             STATS["cached"] += 1
             return json.loads(pth.read_text())
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
