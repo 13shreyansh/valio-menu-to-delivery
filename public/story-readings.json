@@ -1,0 +1,116 @@
+{
+  "wedding": {
+    "status": "readable",
+    "transcript": "Wedding Saturday, 120 guests, salmon and lemon tart",
+    "covers": 120,
+    "dishes": [
+      {
+        "recipe": "salmon",
+        "covers": 120
+      },
+      {
+        "recipe": "tart",
+        "covers": 120
+      }
+    ],
+    "read": [
+      {
+        "word": "Wedding Saturday, 120 guests, salmon and lemon tart",
+        "box": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "uncertain": false
+      }
+    ],
+    "uncertain": [],
+    "reason": "Valid request with 120 covers for salmon and lemon tart.",
+    "source": "text"
+  },
+  "photo": {
+    "status": "readable",
+    "transcript": "SATURDAY WEDDING / 120 guests\nFINAL MENU\nPaistettu siika 120\nLemon tart 120\nJuustolautanen 140\nNo Lohikeitto",
+    "covers": 120,
+    "dishes": [
+      {
+        "recipe": "whitefish",
+        "covers": 120
+      },
+      {
+        "recipe": "tart",
+        "covers": 120
+      },
+      {
+        "recipe": "cheeseboard",
+        "covers": 140
+      }
+    ],
+    "read": [
+      {
+        "word": "SATURDAY WEDDING / 120 guests",
+        "box": [
+          89,
+          86,
+          160,
+          737
+        ],
+        "uncertain": false
+      },
+      {
+        "word": "FINAL MENU",
+        "box": [
+          224,
+          83,
+          284,
+          354
+        ],
+        "uncertain": false
+      },
+      {
+        "word": "Paistettu siika 120",
+        "box": [
+          345,
+          83,
+          410,
+          478
+        ],
+        "uncertain": false
+      },
+      {
+        "word": "Lemon tart 120",
+        "box": [
+          467,
+          83,
+          529,
+          485
+        ],
+        "uncertain": false
+      },
+      {
+        "word": "Juustolautanen 140",
+        "box": [
+          588,
+          71,
+          662,
+          493
+        ],
+        "uncertain": false
+      }
+    ],
+    "uncertain": [],
+    "reason": "The menu clearly specifies 120 guests, with active items Paistettu siika (120), Lemon tart (120), and Juustolautanen (140). 'No Lohikeitto' is an explicit removal.",
+    "source": "photo"
+  },
+  "provenance": {
+    "source": "Actual Gemini responses from live deployment",
+    "verified_at": "2026-11-14T21:24:50+0200",
+    "images": [
+      "menu-1.jpg",
+      "menu-2.jpg",
+      "menu-3.jpg"
+    ],
+    "note": "Story uses recorded understanding for reliability; supplier quotes and approvals run normally."
+  }
+}

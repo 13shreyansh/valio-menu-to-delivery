@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest>=9,<10
+uvicorn>=0.50
+pillow>=12
+fonttools>=4

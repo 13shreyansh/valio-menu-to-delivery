@@ -100,3 +100,13 @@ def test_passed_cutoff_candidate_excluded(wedding_state,monkeypatch,supplier):
     o=k.build(wedding_state)
     assert not o['can_place']
     assert not any(r['product_id']=='469560' for r in o['rows'])
+
+def test_photo_tags_compare_actual_previous_quantities(wedding_state):
+    before=k.response(wedding_state)
+    reading={'status':'readable','transcript':'Final menu 120 guests whitefish and lemon tart','covers':120,
+             'dishes':[{'recipe':'whitefish','covers':120},{'recipe':'tart','covers':80}],'read':[],'source':'photo'}
+    after=k.apply_menu(before['token'],reading)
+    assert next(r for r in after['rows'] if r['role']=='fish')['change']=='Removed'
+    assert next(r for r in after['rows'] if r['role']=='whitefish')['change']=='Added'
+    assert next(r for r in after['rows'] if r['role']=='flour')['change']=='Less'
+    assert next(r for r in after['rows'] if r['role']=='fish')['total']==0

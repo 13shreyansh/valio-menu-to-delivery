@@ -1,0 +1,327 @@
+{
+  "base": "https://valio-menu-to-delivery.vercel.app",
+  "measured_at": "2026-11-14T21:24:50+0200",
+  "initial_total": 675.13,
+  "wedding_total": 1172.38,
+  "final_total": 1517.83,
+  "order_number": "VO-47-5AF834",
+  "rows_matched_hand_gold": 29,
+  "photo_results": {
+    "menu-1": {
+      "status": "readable",
+      "transcript": "SATURDAY WEDDING / 120 guests\nFINAL MENU\nPaistettu siika 120\nLemon tart 120\nJuustolautanen 140\nNo Lohikeitto",
+      "covers": 120,
+      "dishes": [
+        {
+          "recipe": "whitefish",
+          "covers": 120
+        },
+        {
+          "recipe": "tart",
+          "covers": 120
+        },
+        {
+          "recipe": "cheeseboard",
+          "covers": 140
+        }
+      ],
+      "read": [
+        {
+          "word": "SATURDAY WEDDING / 120 guests",
+          "box": [
+            89,
+            86,
+            160,
+            737
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "FINAL MENU",
+          "box": [
+            224,
+            83,
+            284,
+            354
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Paistettu siika 120",
+          "box": [
+            345,
+            83,
+            410,
+            478
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Lemon tart 120",
+          "box": [
+            467,
+            83,
+            529,
+            485
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Juustolautanen 140",
+          "box": [
+            588,
+            71,
+            662,
+            493
+          ],
+          "uncertain": false
+        }
+      ],
+      "uncertain": [],
+      "reason": "The menu clearly specifies 120 guests, with active items Paistettu siika (120), Lemon tart (120), and Juustolautanen (140). 'No Lohikeitto' is an explicit removal.",
+      "source": "photo"
+    },
+    "menu-2": {
+      "status": "readable",
+      "transcript": "Lauantai 21.11. / 120 vierasta\n\nLOPULLINEN MENU\nPaistettu siika 120 annosta\nSitruunatorttu 120 annosta\nJuustolautanen 140 annosta\nEi lohikeittoa",
+      "covers": 120,
+      "dishes": [
+        {
+          "recipe": "whitefish",
+          "covers": 120
+        },
+        {
+          "recipe": "tart",
+          "covers": 120
+        },
+        {
+          "recipe": "cheeseboard",
+          "covers": 140
+        }
+      ],
+      "read": [
+        {
+          "word": "Lauantai 21.11. / 120 vierasta",
+          "box": [
+            105,
+            76,
+            161,
+            626
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "LOPULLINEN MENU",
+          "box": [
+            228,
+            80,
+            292,
+            482
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Paistettu siika 120 annosta",
+          "box": [
+            358,
+            77,
+            417,
+            621
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Sitruunatorttu 120 annosta",
+          "box": [
+            488,
+            82,
+            542,
+            646
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Juustolautanen 140 annosta",
+          "box": [
+            608,
+            75,
+            676,
+            644
+          ],
+          "uncertain": false
+        }
+      ],
+      "uncertain": [],
+      "reason": "The image contains a clear final wedding menu for Saturday 21.11 with 120 guests. Active dishes: Paistettu siika (120), Sitruunatorttu (120), Juustolautanen (140). 'Ei lohikeittoa' indicates lohikeitto is removed.",
+      "source": "photo"
+    },
+    "menu-3": {
+      "status": "readable",
+      "transcript": "Kitchen: Saturday wedding\n120 guests - FINAL\nFried whitefish 120\nLemon tart 120\nCheese board 140\nRemove salmon soup",
+      "covers": 120,
+      "dishes": [
+        {
+          "recipe": "whitefish",
+          "covers": 120
+        },
+        {
+          "recipe": "tart",
+          "covers": 120
+        },
+        {
+          "recipe": "cheeseboard",
+          "covers": 140
+        }
+      ],
+      "read": [
+        {
+          "word": "Kitchen: Saturday wedding",
+          "box": [
+            90,
+            75,
+            160,
+            535
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "120 guests - FINAL",
+          "box": [
+            224,
+            80,
+            296,
+            441
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Fried whitefish 120",
+          "box": [
+            346,
+            80,
+            410,
+            515
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Lemon tart 120",
+          "box": [
+            472,
+            80,
+            536,
+            512
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "Cheese board 140",
+          "box": [
+            597,
+            80,
+            661,
+            523
+          ],
+          "uncertain": false
+        }
+      ],
+      "uncertain": [],
+      "reason": "Clear final wedding menu with 120 guests and active dishes: Fried whitefish (120), Lemon tart (120), and Cheese board (140). Salmon soup is explicitly removed.",
+      "source": "photo"
+    },
+    "blank": {
+      "status": "unreadable",
+      "transcript": "",
+      "covers": null,
+      "dishes": [],
+      "read": [],
+      "uncertain": [],
+      "reason": "The image is completely blank and contains no text or content.",
+      "source": "photo"
+    },
+    "garbled": {
+      "status": "unreadable",
+      "transcript": "",
+      "covers": null,
+      "dishes": [],
+      "read": [],
+      "uncertain": [],
+      "reason": "The image is extremely blurry and completely illegible.",
+      "source": "photo"
+    }
+  },
+  "mcp_tools": [
+    "search_products",
+    "get_product",
+    "quote",
+    "find_substitutes",
+    "plan_menu_order",
+    "request_order",
+    "submit_order"
+  ],
+  "browser_verified": false,
+  "microphone_verified": false,
+  "audio_test": {
+    "source": "macOS synthesized speech WAV, not physical microphone",
+    "reading": {
+      "status": "readable",
+      "transcript": "Wedding Saturday 120 guests salmon and lemon tart",
+      "covers": 120,
+      "dishes": [
+        {
+          "recipe": "salmon",
+          "covers": 120
+        },
+        {
+          "recipe": "tart",
+          "covers": 120
+        }
+      ],
+      "read": [
+        {
+          "word": "Wedding Saturday",
+          "box": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "120 guests",
+          "box": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "salmon",
+          "box": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "uncertain": false
+        },
+        {
+          "word": "lemon tart",
+          "box": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "uncertain": false
+        }
+      ],
+      "uncertain": [],
+      "reason": "",
+      "source": "audio"
+    }
+  }
+}

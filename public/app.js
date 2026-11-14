@@ -93,15 +93,21 @@ function cutoff(d) {
   return `<span>Order by ${esc(time)}</span><span class="pill ${minutes < 0 ? "problem" : minutes < 180 ? "attention" : "ok"}">${icon("clock")}${minutes < 0 ? "Cut-off passed" : `${Math.floor(minutes / 60)} h ${minutes % 60} min left`}</span>`;
 }
 function working(r) {
-  let parts = r.allocations,
-    units = r.unit === "l" ? "ml" : "g",
-    term =
-      parts.length === 1
-        ? `${n(parts[0].covers)} ${parts[0].wedding ? "guests" : "covers"} × ${n(parts[0].per_cover)} ${units}`
-        : `${n(parts.reduce((a, x) => a + x.covers, 0))} covers · ${parts.length} recipe servings`;
-  if (!parts.length)
-    term =
-      r.change === "Removed" ? "Removed from the menu" : "Added by the chef";
+  const groups = new Map();
+  for (const part of r.allocations)
+    groups.set(part.per_cover, (groups.get(part.per_cover) || 0) + part.covers);
+  const unit = r.unit === "l" ? "ml" : "g";
+  let term = [...groups]
+    .map(
+      ([grams, covers]) =>
+        `${n(covers)}${groups.size === 1 ? (r.allocations.some((a) => a.wedding) ? " guests" : " covers") : ""} × ${n(grams)}`,
+    )
+    .join(" + ");
+  term = groups.size
+    ? `${term} ${unit}`
+    : r.change === "Removed"
+      ? "Removed from the menu"
+      : "Added by the chef";
   return `${esc(term)} <span class="operator">=</span> ${n(r.gross)} ${esc(r.unit)}${r.stock ? ` <span class="operator">−</span> ${n(r.stock)} in stock` : ""} <span class="operator">→</span> <b>${n(r.units)} × ${n(r.pack)} ${esc(r.unit)}</b>`;
 }
 function detail(r) {
@@ -114,7 +120,7 @@ function rowHTML(r, previous, index, animate) {
       previous.product_id !== r.product_id ||
       previous.total !== r.total);
   let arrive = animate && (changed || !previous);
-  return `<div class="row-shell${arrive ? " arrive" : ""}" style="--delay:${Math.min(index, 7) * 60}ms"><article class="order-row${r.units === 0 ? " removed" : ""}" id="row-${r.id}" data-row="${r.id}"><div class="row-main"><div class="product"><div class="product-name"><strong title="${esc(r.name)}">${esc(r.name)}</strong><span class="pack">${n(r.pack)} ${r.unit}${r.sales_unit === "KG" ? " / kg" : ""}</span></div><button class="working" data-working="${r.id}" aria-expanded="${expanded.has(r.id)}" aria-controls="working-${r.id}">${working(r)}</button>${r.change ? `<span class="change-tag">${r.change} · ${esc(r.change_reason)}</span>` : ""}${r.availability.model === "Terminal" ? '<span class="terminal">Arrives via terminal</span>' : ""}</div><div class="row-price${changed ? " roll" : ""}">${money(r.total)}</div><div class="stepper" aria-label="${esc(r.name)} sales units"><button data-step="-1" data-id="${r.id}" aria-label="Less ${esc(r.name)}" ${r.units === 0 ? "disabled" : ""}>${icon("minus")}</button><span class="qty${changed ? " roll" : ""}" data-quantity="${r.id}">${n(r.units)}</span><button data-step="1" data-id="${r.id}" aria-label="More ${esc(r.name)}">${icon("plus")}</button></div></div>${r.units === 0 ? `<button class="text-button" data-restore="${r.id}">Put back</button>` : ""}${detail(r)}</article></div>`;
+  return `<div class="row-shell${arrive ? " arrive" : ""}" style="--delay:${Math.min(index, 7) * 60}ms"><article class="order-row${r.units === 0 ? " removed" : ""}" id="row-${r.id}" data-row="${r.id}"><div class="row-main"><div class="product"><div class="product-name"><strong title="${esc(r.name)}">${esc(r.name)}</strong><span class="pack">${n(r.pack)} ${r.unit}${r.sales_unit === "KG" ? " / kg" : ""}</span></div><button class="working" data-working="${r.id}" aria-expanded="${expanded.has(r.id)}" aria-controls="working-${r.id}">${working(r)}</button>${r.change ? `<span class="change-tag">${r.change} · ${esc(r.change_reason)}</span>` : ""}${r.availability.model === "Terminal" ? '<span class="terminal">Arrives via terminal</span>' : ""}</div><div class="row-price${changed ? " roll" : ""}">${money(r.total)}</div><div class="stepper" aria-label="${esc(r.name)} sales units"><button data-step="-1" data-id="${r.id}" aria-label="Less ${esc(r.name)}" ${r.units === 0 || r.change === "Removed" ? "disabled" : ""}>${icon("minus")}</button><span class="qty${changed ? " roll" : ""}" data-quantity="${r.id}">${n(r.units)}</span><button data-step="1" data-id="${r.id}" ${r.change === "Removed" ? "disabled" : ""} aria-label="More ${esc(r.name)}">${icon("plus")}</button></div></div>${r.units === 0 ? (r.change === "Removed" ? `<button class="text-button" data-undo-menu>Undo menu</button>` : `<button class="text-button" data-restore="${r.id}">Put back</button>`) : ""}${detail(r)}</article></div>`;
 }
 function render(next, animate = false) {
   let old = order;
@@ -125,7 +131,7 @@ function render(next, animate = false) {
   const byId = new Map((old?.rows || []).map((r) => [r.id, r]));
   let changedIndex = 0;
   $("#intro").textContent =
-    `${new Set(next.rows.map((r) => r.product_id)).size} products, ${next.deliveries.length} deliveries. Built from your menu, ${412 + (next.wedding?.covers || 0)} booked covers and your stock.`;
+    `${new Set(next.rows.filter((r) => r.units > 0).map((r) => r.product_id)).size} products, ${next.deliveries.length} deliveries. Built from your menu, ${412 + (next.wedding?.covers || 0)} booked covers and your stock.`;
   $("#sheet").innerHTML =
     next.deliveries
       .map((d) => {
@@ -222,6 +228,7 @@ async function change(action, value, expectedRun = null) {
       throw new Error("STOP_STORY");
     render(result, false);
   } catch (e) {
+    if (expectedRun !== null) throw e;
     notice(e.message);
   } finally {
     busy = false;
@@ -234,6 +241,7 @@ function scrollToEl(el) {
   });
 }
 function openTell() {
+  if (storyActive) stopStory();
   $("#tell-panel").hidden = false;
   $("#tell-content").hidden = false;
   $("#thinking").hidden = true;
@@ -256,6 +264,7 @@ function tick(step, label) {
   el.innerHTML = icon("check") + esc(label);
 }
 async function tell(text, media) {
+  if (storyActive) stopStory();
   if (busy || !order) return;
   busy = true;
   clearNotice();
@@ -268,6 +277,10 @@ async function tell(text, media) {
       listened_tokens: listenedTokens,
     });
     listenedTokens = [];
+    if (data.token && !data.rows) {
+      order.token = data.token;
+      order.evidence.calls = data.calls || order.evidence.calls;
+    }
     if (data.reading?.status !== "readable") {
       notice(
         data.reading?.reason ||
@@ -311,7 +324,7 @@ function showConfirmation() {
   $("#intro").textContent = "Your kitchen sheet is signed off.";
   $("#confirmation").hidden = false;
   $("#confirmation").innerHTML =
-    `<h1>${icon("check")}Order placed</h1><div class="order-number">${esc(o.confirmation.order_number)}</div>${o.deliveries.map((d) => `<div class="delivery-receipt"><div><strong>${dayName(d.date)} delivery</strong><p>${d.rows.length} products · ${d.cutoff && new Date(d.cutoff) > new Date() ? "Cut-off met" : "Cut-off not supplied for some products"}</p></div><strong>${money(d.subtotal)}</strong></div>`).join("")}<div class="receipt-total"><span>This week<br><span class="meta">of ${money(o.budget)} budget${o.total > o.budget ? ", approved this week" : ""}</span></span><strong>${money(o.total)}</strong></div><button class="text-button" data-decisions>How this was decided</button><p class="demo-note">${esc(o.confirmation.notice)}</p><p class="mcp-note">Buying with your own ordering agent? It connects to Valio directly over <a href="/mcp/">MCP</a>.</p><button class="outline" id="start-again" style="margin-top:24px">Back to the kitchen</button>`;
+    `<h1>${icon("check")}Order placed</h1><div class="order-number">${esc(o.confirmation.order_number)}</div>${o.deliveries.map((d) => `<div class="delivery-receipt"><div><strong>${dayName(d.date)} delivery</strong><p>${d.rows.filter((r) => r.units > 0).length} products · ${d.cutoff && new Date(d.cutoff) > new Date() ? "Cut-off met" : "Cut-off not supplied for some products"}</p></div><strong>${money(d.subtotal)}</strong></div>`).join("")}<div class="receipt-total"><span>This week<br><span class="meta">of ${money(o.budget)} budget${o.total > o.budget ? ", approved this week" : ""}</span></span><strong>${money(o.total)}</strong></div><button class="text-button" data-decisions>How this was decided</button><p class="demo-note">${esc(o.confirmation.notice)}</p><p class="mcp-note">Buying with your own ordering agent? It connects to Valio directly over <a href="/mcp/">MCP</a>.</p><button class="outline" id="start-again" style="margin-top:24px">Back to the kitchen</button>`;
   scrollToEl($("#confirmation"));
 }
 function showDecisions() {
@@ -400,7 +413,7 @@ document.addEventListener("click", async (ev) => {
     t.textContent = onlyChanges ? "Show full order" : "Show only what changed";
     return;
   }
-  if (t.id === "undo-wedding") {
+  if (t.id === "undo-wedding" || t.hasAttribute("data-undo-menu")) {
     onlyChanges = false;
     $("#result-summary").hidden = true;
     await change("undo-wedding");
@@ -514,6 +527,7 @@ function bytes64(buffer) {
   return btoa(binary);
 }
 async function startRecording() {
+  if (storyActive) stopStory();
   if (busy || recordingPending || recorder?.state === "recording") return;
   releaseRequested = false;
   recordingPending = true;
@@ -666,6 +680,10 @@ $("#photo-file").onchange = async () => {
       token: order.token,
       media: { mime: file.type, data },
     });
+    if (result.token) {
+      order.token = result.token;
+      order.evidence.calls = result.calls || order.evidence.calls;
+    }
     photo = result.reading;
     readToken = result.read_token;
     renderPhoto();
@@ -790,6 +808,7 @@ async function applyPhoto(expectedRun = null) {
     render(updated, true);
     scrollToEl($("#main"));
   } catch (e) {
+    if (expectedRun !== null) throw e;
     notice(e.message);
   } finally {
     busy = false;

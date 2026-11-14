@@ -282,7 +282,7 @@ def act(token, action, value=None):
         # Fresh supply and prices at commitment. No buyer-supplied price or OK is trusted.
         order=build(state,fresh=True)
         if not order['can_place']: return {**order,'token':seal(state),'place_error':'The order changed. Check the highlighted products before placing.'}
-        oid='VO-47-'+digest([state['created'],[(r['product_id'],r['units'],r['unit_price']) for r in order['rows']]])[:6].upper()
+        oid='VO-47-'+digest([state['created'],[(r['product_id'],r['units'],r['unit_price']) for r in order['rows'] if r['units']>0]])[:6].upper()
         order['confirmation']={'order_number':oid,'at':dt.datetime.now(TZ).isoformat(),'demo':True,
                                'notice':'Demo account. Nothing ships. Valio’s Junction API has no order endpoint.'}
         state['events'].append({'action':'Demo order confirmed','order':oid,'total':order['total'],'at':dt.datetime.now(TZ).isoformat()})

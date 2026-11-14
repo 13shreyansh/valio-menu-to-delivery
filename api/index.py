@@ -112,7 +112,7 @@ async def request_order(req: Request, text: str = "", customer: str = "HC-1001")
 @app.get("/api/health")
 def health(deep: int = 0):
     """Liveness. deep=1 also loads the catalogue and prices one product through Valio's API."""
-    out = {"ok": True, "valio_key": bool(os.environ.get("VALIO_API_KEY")), "llm_key": bool(os.environ.get("GEMINI_API_KEY"))}
+    out = {"build_commit": os.environ.get("VERCEL_GIT_COMMIT_SHA"), "ok": True, "valio_key": bool(os.environ.get("VALIO_API_KEY")), "llm_key": bool(os.environ.get("GEMINI_API_KEY"))}
     if deep:
         from chefagent.catalog import load
         cat = load()

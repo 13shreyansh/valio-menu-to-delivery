@@ -28,3 +28,14 @@ def test_complete_final_menu_replaces_only_wedding(wedding_state):
     assert any(s['recipe']=='soup' and not s.get('wedding') for s in o['services'])
     assert [s['recipe'] for s in o['services'] if s.get('wedding')]==['whitefish','tart','cheeseboard']
     assert next(r for r in o['rows'] if r['role']=='whitefish')['units']==18
+
+def test_legible_uncertain_photo_requires_explicit_correction(wedding_state):
+    client=TestClient(app)
+    reading={'status':'uncertain','transcript':'Saturday 120 guests whitefish?','covers':120,
+             'dishes':[{'recipe':'whitefish','covers':120}],'read':[],'uncertain':['whitefish?']}
+    stamp=k.seal({'created':__import__('time').time(),'reading':reading})
+    corrected={**reading,'status':'readable','uncertain':[]}
+    body={'token':k.seal(wedding_state),'read_token':stamp,'reading':corrected}
+    assert client.post('/api/sheet/photo/apply',json=body).status_code==422
+    body['confirmed']=True
+    assert client.post('/api/sheet/photo/apply',json=body).status_code==200

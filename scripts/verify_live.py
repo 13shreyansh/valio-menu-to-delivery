@@ -2,11 +2,13 @@
 import base64, concurrent.futures, json, sys, time
 from pathlib import Path
 import httpx
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 BASE=sys.argv[1] if len(sys.argv)>1 else 'https://valio-menu-to-delivery.vercel.app'
 c=httpx.Client(base_url=BASE,timeout=240)
 def request(path,body=None):
  r=c.post('/api/sheet'+path,json=body) if body is not None else c.get('/api/sheet'+path)
  r.raise_for_status();return r.json()
+previous_report=json.loads(Path('artifacts/live-verification.json').read_text()) if Path('artifacts/live-verification.json').exists() else {}
 initial=request(''); assert initial['can_place'], initial['checks']
 text=request('/tell',{'token':initial['token'],'text':'Wedding Saturday, 120 guests, salmon and lemon tart'})
 assert text['reading']['status']=='readable',text
@@ -38,7 +40,7 @@ for name,r in results.items():
   assert reading['status']!='readable'
   rr=c.post('/api/sheet/photo/apply',json={'token':o['token'],'read_token':r['read_token'],'reading':results['menu-1']['reading']})
   assert rr.status_code==422
-final=request('/photo/apply',{'token':o['token'],'read_token':results['menu-1']['read_token'],'reading':results['menu-1']['reading']})
+final=request('/photo/apply',{'token':results['menu-1'].get('token',o['token']),'read_token':results['menu-1']['read_token'],'reading':results['menu-1']['reading']})
 assert next(r for r in final['rows'] if r['role']=='whitefish')['units']==18
 for ch in list(final['checks']):
  if not ch['approved']: final=request('/change',{'token':final['token'],'action':'approve','value':ch['id']})
@@ -47,6 +49,7 @@ assert placed.get('confirmation',{}).get('demo') is True
 r=c.post('/mcp/',headers={'Accept':'application/json, text/event-stream'},json={'jsonrpc':'2.0','id':1,'method':'tools/list','params':{}})
 r.raise_for_status();tools=r.json()['result']['tools'];assert any(t['name']=='request_order' for t in tools)
 Path('public/story-readings.json').write_text(json.dumps({'wedding':text['reading'],'photo':results['menu-1']['reading'],'provenance':{'source':'Actual Gemini responses from live deployment','verified_at':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'images':['menu-1.jpg','menu-2.jpg','menu-3.jpg'],'note':'Story uses recorded understanding for reliability; supplier quotes and approvals run normally.'}},indent=2,ensure_ascii=False))
-report={'base':BASE,'measured_at':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'initial_total':initial['total'],'wedding_total':text['total'],'final_total':placed['total'],'order_number':placed['confirmation']['order_number'],'rows_matched_hand_gold':sum(len(v) for v in GOLD.values()),'photo_results':{n:r['reading'] for n,r in results.items()},'mcp_tools':[t['name'] for t in tools],'browser_verified':False,'microphone_verified':False}
+report={'base':BASE,'measured_at':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'initial_total':initial['total'],'wedding_total':text['total'],'final_total':placed['total'],'order_number':placed['confirmation']['order_number'],'rows_matched_hand_gold':sum(len(v) for v in GOLD.values()),'photo_results':{n:r['reading'] for n,r in results.items()},'mcp_tools':[t['name'] for t in tools],'browser_verified':False,'microphone_verified':False,'deployment_commit':c.get('/api/health').json().get('build_commit')}
+if previous_report.get('audio_test'): report['audio_test']=previous_report['audio_test']
 Path('artifacts/live-verification.json').write_text(json.dumps(report,indent=2,ensure_ascii=False))
 print('Measured: expected order, budget lock, stale approval, 3 positive +2 negative photos, final mock confirmation and MCP passed.')

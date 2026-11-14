@@ -24,14 +24,15 @@ async def tell(req:Request):
         listened=k.unseal(token)
         if listened.get('call',{}).get('purpose')=='live speech reading': state['calls'].append(listened['call'])
     state['calls'].append({'method':'POST','source':'Gemini','purpose':source+' understanding','status':200})
-    if reading['status']!='readable': return {'reading':reading}
+    if reading['status']!='readable': return {'reading':reading,'token':k.seal(state),'calls':state['calls']}
     out=k.apply_menu(k.seal(state),reading);out['reading']=reading;return out
 
 @router.post('/photo')
 async def photo(req:Request):
-    b=await req.json();k.unseal(b.get('token',''))
+    b=await req.json();state=k.unseal(b.get('token',''))
     reading=understand(media=b.get('media'),source='photo')
-    return {'reading':reading,'read_token':k.seal({'created':__import__('time').time(),'reading':reading})}
+    state['calls'].append({'method':'POST','source':'Gemini','purpose':'whiteboard understanding','status':200})
+    return {'reading':reading,'token':k.seal(state),'calls':state['calls'],'read_token':k.seal({'created':__import__('time').time(),'reading':reading})}
 
 @router.post('/photo/apply')
 async def photo_apply(req:Request):
@@ -41,7 +42,8 @@ async def photo_apply(req:Request):
     # Chef may correct the visible portions, but cannot change an unreadable result to readable.
     reading=validate_reading(b.get('reading') or verified,'photo')
     if reading['status']!='readable': raise k.KitchenError('Check the menu words and portion counts first.')
-    state=k.unseal(b['token']);state['calls'].append({'method':'POST','source':'Gemini','purpose':'whiteboard understanding','status':200})
+    state=k.unseal(b['token'])
+    state['events'].append({'action':'Photo words checked by chef' if b.get('confirmed') else 'Photo reviewed','at':__import__('datetime').datetime.now(k.TZ).isoformat()})
     return k.apply_menu(k.seal(state),reading)
 
 @router.get('/story-reading')
