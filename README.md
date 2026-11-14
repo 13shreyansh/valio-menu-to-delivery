@@ -34,7 +34,7 @@ The Python suite uses an explicitly synthetic supplier to test the hand-built ex
 
 `npm test` generates its own synthetic sheet fixture and runs DOM interactions in JSDOM. This is not a browser layout or microphone test.
 
-`verify_live.py` uses the deployed app, actual Valio responses and actual Gemini understanding. It checks the expected wedding order, budget lock, three positive and two negative handwritten-style whiteboard fixtures, final demo confirmation and MCP. It writes the measured report to `artifacts/live-verification.json`. Its recordings for “Play the story” go to `public/story-readings.json`; prices and approvals are still computed normally during playback.
+`verify_live.py` uses the deployed app, actual Valio responses and actual Gemini understanding. It checks the expected wedding order, budget lock, three positive and two negative handwritten-style whiteboard fixtures, final demo confirmation and MCP. It writes the measured report to `artifacts/live-verification.json`. On first recording, its verified readings for “Play the story” go to `public/story-readings.json`; prices and approvals are still computed normally during playback.
 
 Real browser acceptance at 1440 × 900, 1024 × 768 and 390 px, console checks and microphone capture must be checked through Codex's inbuilt browser. The present environment reports its browser host unavailable; no substitute personal or external browser has been used.
 

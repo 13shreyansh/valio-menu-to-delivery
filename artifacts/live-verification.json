@@ -1,15 +1,15 @@
 {
   "base": "https://valio-menu-to-delivery.vercel.app",
-  "measured_at": "2026-11-14T21:24:50+0200",
+  "measured_at": "2026-11-14T21:31:10+0200",
   "initial_total": 675.13,
   "wedding_total": 1172.38,
   "final_total": 1517.83,
-  "order_number": "VO-47-5AF834",
+  "order_number": "VO-47-596D33",
   "rows_matched_hand_gold": 29,
   "photo_results": {
     "menu-1": {
       "status": "readable",
-      "transcript": "SATURDAY WEDDING / 120 guests\nFINAL MENU\nPaistettu siika 120\nLemon tart 120\nJuustolautanen 140\nNo Lohikeitto",
+      "transcript": "SATURDAY WEDDING / 120 guests\nFINAL MENU\n\nPaistettu siika 120\nLemon tart 120\nJuustolautanen 140\nNo Lohikeitto",
       "covers": 120,
       "dishes": [
         {
@@ -29,10 +29,10 @@
         {
           "word": "SATURDAY WEDDING / 120 guests",
           "box": [
-            89,
+            88,
             86,
-            160,
-            737
+            161,
+            736
           ],
           "uncertain": false
         },
@@ -40,9 +40,9 @@
           "word": "FINAL MENU",
           "box": [
             224,
-            83,
-            284,
-            354
+            82,
+            287,
+            356
           ],
           "uncertain": false
         },
@@ -51,8 +51,8 @@
           "box": [
             345,
             83,
-            410,
-            478
+            409,
+            479
           ],
           "uncertain": false
         },
@@ -60,8 +60,8 @@
           "word": "Lemon tart 120",
           "box": [
             467,
-            83,
-            529,
+            81,
+            532,
             485
           ],
           "uncertain": false
@@ -69,21 +69,21 @@
         {
           "word": "Juustolautanen 140",
           "box": [
-            588,
+            590,
             71,
-            662,
-            493
+            663,
+            495
           ],
           "uncertain": false
         }
       ],
       "uncertain": [],
-      "reason": "The menu clearly specifies 120 guests, with active items Paistettu siika (120), Lemon tart (120), and Juustolautanen (140). 'No Lohikeitto' is an explicit removal.",
+      "reason": "Successfully parsed final menu with clear guest count and active dishes.",
       "source": "photo"
     },
     "menu-2": {
       "status": "readable",
-      "transcript": "Lauantai 21.11. / 120 vierasta\n\nLOPULLINEN MENU\nPaistettu siika 120 annosta\nSitruunatorttu 120 annosta\nJuustolautanen 140 annosta\nEi lohikeittoa",
+      "transcript": "Lauantai 21.11. / 120 vierasta\nLOPULLINEN MENU\nPaistettu siika 120 annosta\nSitruunatorttu 120 annosta\nJuustolautanen 140 annosta\nEi lohikeittoa",
       "covers": 120,
       "dishes": [
         {
@@ -103,10 +103,10 @@
         {
           "word": "Lauantai 21.11. / 120 vierasta",
           "box": [
-            105,
+            103,
             76,
             161,
-            626
+            627
           ],
           "uncertain": false
         },
@@ -114,7 +114,7 @@
           "word": "LOPULLINEN MENU",
           "box": [
             228,
-            80,
+            79,
             292,
             482
           ],
@@ -124,9 +124,9 @@
           "word": "Paistettu siika 120 annosta",
           "box": [
             358,
-            77,
-            417,
-            621
+            76,
+            422,
+            622
           ],
           "uncertain": false
         },
@@ -134,25 +134,25 @@
           "word": "Sitruunatorttu 120 annosta",
           "box": [
             488,
-            82,
+            83,
             542,
-            646
+            647
           ],
           "uncertain": false
         },
         {
           "word": "Juustolautanen 140 annosta",
           "box": [
-            608,
-            75,
-            676,
-            644
+            611,
+            74,
+            678,
+            646
           ],
           "uncertain": false
         }
       ],
       "uncertain": [],
-      "reason": "The image contains a clear final wedding menu for Saturday 21.11 with 120 guests. Active dishes: Paistettu siika (120), Sitruunatorttu (120), Juustolautanen (140). 'Ei lohikeittoa' indicates lohikeitto is removed.",
+      "reason": "",
       "source": "photo"
     },
     "menu-3": {
@@ -177,20 +177,20 @@
         {
           "word": "Kitchen: Saturday wedding",
           "box": [
-            90,
-            75,
-            160,
-            535
+            93,
+            81,
+            162,
+            530
           ],
           "uncertain": false
         },
         {
           "word": "120 guests - FINAL",
           "box": [
-            224,
-            80,
-            296,
-            441
+            227,
+            81,
+            293,
+            443
           ],
           "uncertain": false
         },
@@ -198,17 +198,17 @@
           "word": "Fried whitefish 120",
           "box": [
             346,
-            80,
-            410,
-            515
+            81,
+            407,
+            517
           ],
           "uncertain": false
         },
         {
           "word": "Lemon tart 120",
           "box": [
-            472,
-            80,
+            476,
+            81,
             536,
             512
           ],
@@ -218,15 +218,15 @@
           "word": "Cheese board 140",
           "box": [
             597,
-            80,
+            81,
             661,
-            523
+            520
           ],
           "uncertain": false
         }
       ],
       "uncertain": [],
-      "reason": "Clear final wedding menu with 120 guests and active dishes: Fried whitefish (120), Lemon tart (120), and Cheese board (140). Salmon soup is explicitly removed.",
+      "reason": "The final menu explicitly sets 120 guests with active dishes Fried whitefish (120), Lemon tart (120), and Cheese board (140), while salmon soup is removed.",
       "source": "photo"
     },
     "blank": {
@@ -236,7 +236,7 @@
       "dishes": [],
       "read": [],
       "uncertain": [],
-      "reason": "The image is completely blank and contains no text or content.",
+      "reason": "The image is completely blank, plain grey background with no legible text or menu details.",
       "source": "photo"
     },
     "garbled": {
@@ -246,7 +246,7 @@
       "dishes": [],
       "read": [],
       "uncertain": [],
-      "reason": "The image is extremely blurry and completely illegible.",
+      "reason": "The image is extremely blurry and unreadable.",
       "source": "photo"
     }
   },
@@ -261,6 +261,7 @@
   ],
   "browser_verified": false,
   "microphone_verified": false,
+  "deployment_commit": "53888021b6495f4950f2a6aff495653fb648ab00",
   "audio_test": {
     "source": "macOS synthesized speech WAV, not physical microphone",
     "reading": {
@@ -323,5 +324,10 @@
       "reason": "",
       "source": "audio"
     }
+  },
+  "recorded_story_backend": {
+    "passed": true,
+    "total": 1517.83,
+    "browser": false
   }
 }
