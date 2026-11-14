@@ -86,7 +86,7 @@ for (const [name, viewport] of [
     ).toBeDisabled();
     if (viewport.width === 390) {
       const bounds = await p
-        .locator(".order-table tr")
+        .locator(".order-table tbody tr")
         .first()
         .evaluate((row) => {
           const link = row

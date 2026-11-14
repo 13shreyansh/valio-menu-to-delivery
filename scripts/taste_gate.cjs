@@ -144,6 +144,13 @@ const fs = require("node:fs");
       await shot("orders-" + tab.toLowerCase());
     }
     await p.locator("main tbody tr").first().locator("a").click();
+    await expect(
+      p
+        .locator(".topbar h1, .mobile-title")
+        .filter({ hasText: /^Order AU-/ })
+        .first(),
+    ).toBeVisible({ timeout: 60000 });
+    await expect(p.locator(".day-header").first()).toContainText("delivered");
     await shot("past-order");
     expect(
       await p.getByRole("button", { name: "Place order", exact: true }).count(),
@@ -152,6 +159,9 @@ const fs = require("node:fs");
     await p
       .getByRole("textbox", { name: "Search products or codes", exact: true })
       .fill("463380");
+    await expect(
+      p.getByRole("button", { name: "Search", exact: true }),
+    ).toBeEnabled({ timeout: 120000 });
     await p.getByRole("button", { name: "Search", exact: true }).click();
     await expect(p.locator("tbody")).toContainText("463380", {
       timeout: 120000,

@@ -20,7 +20,7 @@ function setup() {
   w.fetch = async () => ({ ok: true, json: async () => ({}) });
   w.eval(
     code +
-      `;window.hooks={render,state:S,esc,orderPage,start,rulesView,checklistLabel,microphone,saveRule,flushRules:()=>ruleQueue,fakeRecording:()=>{S.listening=true;recordingSession={recorder:{stop:()=>{window.micStopped=true}},stream:{getTracks:()=>[{stop:()=>{window.trackStopped=true}}]}}}};`,
+      `;window.hooks={render,state:S,esc,orderPage,start,ensureDraft,rulesView,checklistLabel,microphone,saveRule,flushRules:()=>ruleQueue,fakeRecording:()=>{S.listening=true;recordingSession={recorder:{stop:()=>{window.micStopped=true}},stream:{getTracks:()=>[{stop:()=>{window.trackStopped=true}}]}}}};`,
   );
   return { dom, w, errors };
 }
@@ -693,5 +693,34 @@ test("delivered past order uses kitchen words when its cutoff was not recorded",
     /Order-by time was not recorded/,
   );
   assert.doesNotMatch(w.document.body.textContent, /not supplied/i);
+  dom.window.close();
+});
+
+test("a fresh browser reuses the prepared chef draft and keeps each kitchen cache separate", async () => {
+  const { dom, w } = setup();
+  const o = account(w);
+  const s = w.hooks.state;
+  s.account.account_id = "test-" + "a".repeat(32);
+  s.account.drafts = [
+    { draft_id: "d".repeat(32), placed_by: "Sanna Virtanen" },
+  ];
+  w.localStorage.setItem("aurora-draft", "stale-old-account-id");
+  const calls = [];
+  w.fetch = async (url) => {
+    calls.push(url);
+    return { ok: true, json: async () => o };
+  };
+  await w.hooks.ensureDraft();
+  assert.deepEqual(calls, ["/api/drafts/" + "d".repeat(32)]);
+  assert.equal(
+    w.localStorage.getItem("valio-draft-v3:" + s.account.account_id),
+    o.draft_id,
+  );
+  s.account.account_id = "aurora";
+  s.account.drafts = [];
+  calls.length = 0;
+  await w.hooks.ensureDraft();
+  assert.deepEqual(calls, ["/api/drafts"]);
+  assert.equal(w.localStorage.getItem("valio-draft-v3:aurora"), o.draft_id);
   dom.window.close();
 });

@@ -137,10 +137,10 @@ const fs = require("node:fs");
     const newDraft = await (
       await ctx.request.post(base + "/api/drafts", { data: {} })
     ).json();
-    await p.evaluate(
-      (id) => localStorage.setItem("aurora-draft", id),
-      newDraft.draft_id,
-    );
+    await p.evaluate(({ key, id }) => localStorage.setItem(key, id), {
+      key: "valio-draft-v3:test-" + kitchen.run,
+      id: newDraft.draft_id,
+    });
     await p.goto(base + "/catalogue");
     await p
       .getByRole("textbox", { name: "Search products or codes", exact: true })

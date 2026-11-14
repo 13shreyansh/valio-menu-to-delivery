@@ -91,8 +91,9 @@ const fs = require("node:fs");
     );
     await p.screenshot({ path: "artifacts/media/photo-result.png" });
     report.photo = "passed";
-    const draftId = await p.evaluate(() =>
-      localStorage.getItem("aurora-draft"),
+    const draftId = await p.evaluate(
+      (key) => localStorage.getItem(key),
+      "valio-draft-v3:test-" + kitchen.run,
     );
     const r = await ctx.request.get(base + "/api/drafts/" + draftId);
     const o = await r.json();

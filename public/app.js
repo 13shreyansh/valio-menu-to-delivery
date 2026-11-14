@@ -132,18 +132,24 @@ async function refreshAccount() {
     render();
   }
 }
+const draftStorageKey = () =>
+  "valio-draft-v3:" + (S.account?.account_id || "aurora");
 async function ensureDraft() {
-  const id = localStorage.getItem("aurora-draft");
+  const prepared = S.account?.drafts?.find(
+    (d) => d.placed_by === "Sanna Virtanen",
+  );
+  const id = localStorage.getItem(draftStorageKey()) || prepared?.draft_id;
   if (id) {
     try {
       S.order = await api("/drafts/" + id);
+      localStorage.setItem(draftStorageKey(), S.order.draft_id);
       return;
     } catch {
-      localStorage.removeItem("aurora-draft");
+      localStorage.removeItem(draftStorageKey());
     }
   }
   S.order = await api("/drafts", {});
-  localStorage.setItem("aurora-draft", S.order.draft_id);
+  localStorage.setItem(draftStorageKey(), S.order.draft_id);
 }
 async function boot() {
   if (S.path === "/") {
@@ -158,7 +164,7 @@ async function boot() {
     if (S.path === "/catalogue") loadCatalogue();
     if (S.path.startsWith("/orders/draft-")) {
       S.order = await api("/drafts/" + S.path.slice("/orders/draft-".length));
-      localStorage.setItem("aurora-draft", S.order.draft_id);
+      localStorage.setItem(draftStorageKey(), S.order.draft_id);
       render();
     }
     if (S.path.startsWith("/orders/AU-")) {
@@ -676,7 +682,7 @@ async function send() {
   try {
     if (S.order.status === "placed") {
       S.order = await api("/drafts", {});
-      localStorage.setItem("aurora-draft", S.order.draft_id);
+      localStorage.setItem(draftStorageKey(), S.order.draft_id);
     }
     const r = await fetch("/api/ask", {
       method: "POST",
@@ -909,7 +915,7 @@ document.addEventListener("click", async (e) => {
     e.preventDefault();
     await task(async () => {
       S.order = await api("/drafts/" + draft.dataset.openDraft);
-      localStorage.setItem("aurora-draft", S.order.draft_id);
+      localStorage.setItem(draftStorageKey(), S.order.draft_id);
       S.readOrder = null;
       S.filter = "all";
       S.path = "/orders/week-47";
@@ -1103,7 +1109,7 @@ document.addEventListener("click", async (e) => {
     await task(async () => {
       if (S.order.status === "placed") {
         S.order = await api("/drafts", {});
-        localStorage.setItem("aurora-draft", S.order.draft_id);
+        localStorage.setItem(draftStorageKey(), S.order.draft_id);
       }
       S.order = await api("/drafts/" + S.order.draft_id + "/change", {
         action: "add",
