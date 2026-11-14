@@ -1,5 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": { "api/index.py": { "maxDuration": 300, "memory": 2048, "excludeFiles": "{data/raw/**,data/cache/valio_api.json,eval/runs/**,scripts/**}" } },
-  "rewrites": [ { "source": "/(.*)", "destination": "/api/index" } ]
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 300,
+      "memory": 2048,
+      "excludeFiles": "{data/raw/**,data/cache/valio_api.json,eval/runs/**,scripts/**}",
+      "includeFiles": "{public/**,eval/gold/**}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ]
 }

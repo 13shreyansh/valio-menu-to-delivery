@@ -108,4 +108,5 @@ def index():
     return FileResponse(ROOT / "public" / "index.html")
 
 
-app.mount("/", StaticFiles(directory=ROOT / "public"), name="static")
+if (ROOT / "public").is_dir():  # on Vercel, public/ is served by the CDN
+    app.mount("/", StaticFiles(directory=ROOT / "public"), name="static")

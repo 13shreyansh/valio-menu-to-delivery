@@ -40,6 +40,7 @@ class ValioAPI:
         self.disruptions = disruptions or Disruptions()
         self.offline = offline
         self.calls = 0
+        self.queried = {}  # path -> set of product ids looked up (cached or live)
         self._cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
 
     def _save(self):
@@ -49,6 +50,7 @@ class ValioAPI:
 
     def _post(self, path, date, ids):
         ids = sorted(set(ids))
+        self.queried.setdefault(path, set()).update(ids)
         out, missing = {}, []
         for pid in ids:
             k = f"{path}|{date}|{pid}"

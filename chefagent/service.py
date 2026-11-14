@@ -99,6 +99,12 @@ def plan_menu_order(services: list[dict], customer: str = "HC-1001", kitchen: di
     k = kitchen or KITCHENS.get(customer, KITCHENS["HC-1001"])
     api = ValioAPI(customer=k["customer"], disruptions=disruptions)
     order = Planner(api, k).plan(services)
+    cat = load_catalog()
+    order["api_usage"] = {"http_calls": api.calls,
+                          "price_lookups": len(api.queried.get("/api/price", ())),
+                          "availability_lookups": len(api.queried.get("/api/availability", ())),
+                          "catalogue_size": len(cat.food),
+                          "note": "Only shortlisted products are priced and checked; never the whole catalogue."}
     order["draft_id"] = "D-" + hashlib.sha1(json.dumps(order["menu"], default=str).encode()).hexdigest()[:10]
     return order
 
