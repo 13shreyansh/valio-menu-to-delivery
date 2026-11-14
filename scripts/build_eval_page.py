@@ -43,7 +43,7 @@ def main():
                 "<th>Allergen/diet violations</th><th>Qty within ±30%</th><th>Extra lines</th><th>Unflagged recipe swaps</th></tr>"
                 + "".join(rows) + "</table>")
     ho = load("heldout-final")
-    ho_html = (f'<p><b>Held-out</b> (6 cases, 14 dishes never seen while tuning, run once on the frozen version): '
+    ho_html = (f'<p><b>Held-out</b> (6 cases, 23 dishes from 14 recipe cards never seen while tuning, run once on the frozen version): '
                f'{pct(ho["cookable_rate"])} cookable, {pct(ho["ingredient_recall"])} ingredient recall, '
                f'{ho["allergen_violations"]} allergen violations.</p>') if ho else \
         '<p class=muted>Held-out split: runs once, on the frozen version.</p>'

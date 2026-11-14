@@ -43,6 +43,7 @@ See `eval/README.md` and `eval/METRICS_LOG.md`. There are two evals, both graded
 | | Floor (keyword top-1, no guardrails) | Agent |
 |---|---|---|
 | Dishes cookable (dev) | 8% | 62% |
+| Dishes cookable (held-out, run once on the frozen version) | | 70% |
 | Allergen/diet violations | 16 | **0** |
 | Requests handled correctly, every one of 3 fresh runs (pass^3) | | **13/13** |
 | False auto-approvals | | **0** |

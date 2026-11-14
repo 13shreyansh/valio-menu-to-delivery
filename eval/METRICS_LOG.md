@@ -13,6 +13,8 @@ Gold edits are logged as gold fixes. Held-out is run once per frozen version.
 | v1 | Pick prompt accepts prepared forms of the same ingredient (diced onion, liquid egg, UHT). Only salt, pepper, oil and water count as pantry: spices, stock, sugar and herbs are bought | 62% | 91.1% | 0 | | 63 (€1,754) |
 | v2 | Pack size: trust the printed pack when the price-API ratio agrees within 3% (that ratio is rounded to cents). Direct requests are never rounded below the asked quantity | 62% (no change, no regression) | 91.1% | 0 | 57% | 63 (€1,754) |
 
+**Held-out, frozen v2** (6 cases, 23 dishes, 14 recipe cards never used while tuning; run once): **70% cookable (16/23)**, 88.3% ingredient recall, **0 allergen violations**, 0 unflagged recipe swaps, quantities within ±30%: 70%. No sign of overfitting to dev (dev is 62%).
+
 Error analysis after v1 (first failure per dish, 14 failures):
 - **Retrieval or pick** (6): onion ×2, mushroom ×2 in the nut-free kitchen, pork stew cut picked as beef, lemon picked as vinegar.
 - **Fresh-herb stock-outs** (2): dill. One of these picked fennel for dill.
