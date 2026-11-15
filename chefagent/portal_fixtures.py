@@ -41,6 +41,7 @@ RECIPES["breakfast"]["ingredients"].update(
 RECIPES["staff_porridge"]["ingredients"]["cream"] = 30
 RECIPES["soup"]["name"] = "Salmon soup"
 RECIPES["whitefish"]["name"] = "Whitefish with potatoes"
+RECIPES["cheeseboard"]["name"] = "Cheese board"
 DELIVERIES = legacy.DELIVERIES
 BASE_SERVICES = legacy.BASE_SERVICES
 TEAM = [
