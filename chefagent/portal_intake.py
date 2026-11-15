@@ -163,7 +163,7 @@ def understand_order(text, rule=None):
     question = str(raw.get("question") or "")[:400]
     if out["kind"] == "impossible":
         # A fixed, plain sentence: the model's wording varied run to run.
-        about_food = raw.get("products") or raw.get("dishes") or raw.get("date")
+        about_food = raw.get("products") or raw.get("dishes") or raw.get("date") or re.search(r"deliver|day|date|week|monday|past", question, re.I)
         return {"question": "Valio can't deliver on that day. The next delivery is Monday 16 November, then Wednesday 18 and Friday 20. Which of these should it be?"
                 if about_food or not question else question, "call": call}
     for d in (raw.get("dishes") or [])[:8]:
