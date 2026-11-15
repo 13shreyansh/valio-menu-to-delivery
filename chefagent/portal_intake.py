@@ -174,7 +174,7 @@ def understand_order(text, rule=None):
             "recipe": d.get("recipe") if d.get("recipe") in f.RECIPES else None,
             "covers": covers,
             "diet": [x for x in (d.get("diet") or []) if x in ("vegan", "vegetarian", "gluten-free", "milk-free")],
-            "modifier": (str(d["modifier"])[:80] if d.get("modifier") else None),
+            "modifier": (re.sub(r"^with\s+", "", str(d["modifier"]).strip(), flags=re.I)[:80] if d.get("modifier") else None),
             "modifier_allergens": [a for a in (d.get("modifier_allergens") or []) if a in ALLERGENS],
             "ingredients": [],
         }

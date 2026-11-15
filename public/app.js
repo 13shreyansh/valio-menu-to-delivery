@@ -460,6 +460,7 @@ function approval(c, o) {
   return `<div class="approval" data-check="${esc(c.id)}">${icon(checkIcons[c.kind] || "circle-alert")}<div class="approval-copy"><div class="approval-title">${approvalTitle(c, o)}</div>${body ? `<p>${esc(c.text)}</p>` : ""}${c.reopened ? '<p class="reopened">The order changed after your OK, so please check this again.</p>' : ""}</div><div class="approval-buttons">${other}${c.can_approve ? btn(c.kind === "budget" ? "Approve once" : "Approve", "approve", "primary", `data-value="${esc(c.id)}"`) : ""}</div></div>`;
 }
 function eventTag(o) {
+  if (o.reading?.kind === "note") return "Changed in this order";
   return "For " + requestLabel(o).replace(/^the /, "");
 }
 function rowTag(r, o) {

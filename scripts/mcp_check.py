@@ -1,6 +1,8 @@
-import httpx, json, sys, time
-B="http://localhost:8765"
-c=httpx.Client(base_url=B,timeout=240)
+"""Outside-agent check of the MCP door. On a deployed site it uses an isolated test kitchen."""
+import httpx, json, os, sys, time, uuid
+B=os.environ.get("BASE_URL","http://localhost:8765")
+RUN={} if "localhost" in B else {"x-valio-test-run":uuid.uuid4().hex}
+c=httpx.Client(base_url=B,timeout=240,headers=RUN)
 r=c.post("/api/login",json={}); c.headers["Cookie"]="aurora_account="+r.cookies.get("aurora_account"); c.cookies.clear()
 acct=c.get("/api/account").json(); tok=acct["mcp_token"]
 H={"Accept":"application/json, text/event-stream","Content-Type":"application/json"}
