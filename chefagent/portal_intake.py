@@ -162,7 +162,10 @@ def understand_order(text, rule=None):
     }
     question = str(raw.get("question") or "")[:400]
     if out["kind"] == "impossible":
-        return {"question": question or "The next possible delivery is Monday 16 November. Which day in week 47 should Valio plan this for?", "call": call}
+        # A fixed, plain sentence: the model's wording varied run to run.
+        about_food = raw.get("products") or raw.get("dishes") or raw.get("date")
+        return {"question": "Valio can't deliver on that day. The next delivery is Monday 16 November, then Wednesday 18 and Friday 20. Which of these should it be?"
+                if about_food or not question else question, "call": call}
     for d in (raw.get("dishes") or [])[:8]:
         if not isinstance(d, dict):
             continue
@@ -275,7 +278,7 @@ def shortlist(terms, unit, policy, diet=(), flags=None, k=30):
 
 
 JUDGE = """You match wholesale catalogue products to what a professional kitchen asked for. Reply with JSON only: {"matches": {"<need number>": ["product id", ...]}}.
-For each need, list every candidate that IS that product in a form the kitchen can use for the stated purpose: the plain product itself, not a flavoured drink, dessert, snack, ready meal, powder or a different product that merely contains the word. For "milk" accept drinking milk and milk drinks of any fat level; reject sour milk, buttermilk, chocolate milk, coffee drinks, milk powder, cream, quark and yogurt. For a recipe ingredient accept raw or plain kitchen-grade products (fresh, chilled or frozen). Keep the candidates' order. If none fit, return an empty list."""
+For each need, list every candidate that IS that product in a form the kitchen can use for the stated purpose: the plain product itself, not a flavoured drink, dessert, snack, ready meal, powder or a different product that merely contains the word. For "milk" accept drinking milk and milk drinks of any fat level; reject sour milk, buttermilk, chocolate milk, coffee milk (kahvimaito), coffee drinks, milk powder, cream, quark and yogurt. For a recipe ingredient accept raw or plain kitchen-grade products (fresh, chilled or frozen). Keep the candidates' order. If none fit, return an empty list."""
 
 
 def judge(needs, calls):
@@ -318,6 +321,14 @@ def quote_options(product, date, policy, api, calls):
         if cands:
             accepted = judge([{"label": product["name"], "purpose": "direct order", "candidates": cands}], calls)[0]
     cands = [p for p in cands if p["id"] in accepted]
+    if not cands and not product.get("product_id"):
+        # Nothing fits: say whether the catalogue has it but the kitchen's rules exclude it.
+        loose = shortlist([product["search_fi"], product["search_en"], product["name"]], unit, {}, flags=product, k=12)
+        if loose:
+            ok = judge([{"label": product["name"], "purpose": "direct order", "candidates": loose}], calls)[0]
+            hit = next((p for p in loose if p["id"] in ok), None)
+            if hit:
+                product["blocked"] = product_violations(hit, policy=policy)[0] if product_violations(hit, policy=policy) else None
     ids = [p["id"] for p in cands]
     prices = api.price(delivery, ids) if ids else {}
     stock = api.availability(delivery, ids) if ids else {}

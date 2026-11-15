@@ -9,6 +9,12 @@ from .valio_api import ValioBusy
 from .account_store import clone_account, SEED
 
 router = APIRouter(prefix="/api")
+_locks, _locks_guard = {}, threading.Lock()
+
+
+def _draft_lock(account, draft_id):
+    with _locks_guard:
+        return _locks.setdefault((account, str(draft_id)), threading.Lock())
 
 
 def signed_in(req: Request):
@@ -185,6 +191,13 @@ async def ask(req: Request):
                 }
             )
 
+        # One request per draft at a time: a resend after a reload waits for the first one
+        # instead of colliding with it, then sees its result ("already in your order").
+        lock = _draft_lock(account_id(), body.get("draft_id"))
+        if not lock.acquire(timeout=90):
+            q.put({"type": "error", "error": "Valio is still working on your previous request for this order. It will appear in a moment."})
+            q.put(None)
+            return
         try:
             out = p.apply_request(
                 body.get("draft_id"),
@@ -205,6 +218,7 @@ async def ask(req: Request):
                 }
             )
         finally:
+            lock.release()
             q.put(None)
 
     context=copy_context()

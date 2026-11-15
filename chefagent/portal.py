@@ -2,7 +2,7 @@
 
 import httpx
 
-import base64, copy, datetime as dt, hmac, math, re, secrets, time, uuid
+import base64, copy, datetime as dt, hashlib, hmac, math, re, secrets, time, uuid
 from types import SimpleNamespace
 from . import kitchen as k, portal_fixtures as f
 from .account_store import Store, Conflict
@@ -192,7 +192,7 @@ def build(state, fresh=False, progress=None, book=None, rule=None):
     checks = out["checks"]
     rows = {r["id"]: r for r in out["rows"]}
     notes = list((state.get("reading") or {}).get("assumptions") or [])
-    if not any(r["units"] > 0 for r in out["rows"]) and not checks:
+    if not any(r["units"] > 0 for r in out["rows"]) and not checks and not state.get("line_checks"):
         checks.append(
             {
                 "id": "empty",
@@ -489,10 +489,10 @@ def draft(draft_id):
         or len(draft_id) != 32
         or not all(c in "0123456789abcdef" for c in draft_id)
     ):
-        raise k.KitchenError("Choose an order from your account.")
+        raise k.KitchenError("There is no order with that id in this account. Use the draft_id that order_products or prepare_order returned.")
     state, version = Store().get("drafts/" + draft_id)
     if not state:
-        raise k.KitchenError("This order could not be found.")
+        raise k.KitchenError("There is no order with that id in this account. Use the draft_id that order_products or prepare_order returned.")
     return state, version
 
 
@@ -740,8 +740,9 @@ def apply_request(
             when = nice_day(need["date"])
             if not line["chosen"]:
                 closest = "; ".join(f"{o['name']}: {o.get('note', 'not available')}" for o in line["options"][:3])
-                title = f"No {need['name'].lower()} can arrive by {when}" if line["options"] else f"“{need['name']}” is not in Valio's catalogue"
-                state["line_checks"].append({"id": f"line-none-{n}", "kind": "gap", "title": title, "text": (f"Valio checked {line['compared']} matching products. Closest: {closest}. Ask for a later day or another product." if line["options"] else f"Valio found no product matching “{need['name']}” that fits your kitchen rules. Try other words, or search the catalogue."), "row_ids": [], "can_approve": False})
+                blocked = next((x.get("blocked") for x in reading["products"] if x["name"] == need["name"] and x.get("blocked")), None)
+                title = f"No {need['name'].lower()} can arrive by {when}" if line["options"] else f"{need['name'].capitalize()}: your rule is no {blocked.split(' (')[0].split()[-1]}" if blocked else f"“{need['name']}” is not in Valio's catalogue"
+                state["line_checks"].append({"id": f"line-none-{n}", "kind": "gap", "title": title, "text": (f"Valio checked {line['compared']} matching products. Closest: {closest}. Ask for a later day or another product." if line["options"] else (f"Valio has {need['name'].lower()}, but it {blocked.split(' (')[0]} and your kitchen rule is no {blocked.split(' (')[0].split()[-1]}. Choose another product, or change the rule in Settings." if blocked else f"Valio found no product matching “{need['name']}” that fits your kitchen rules. Try other words, or search the catalogue.")), "row_ids": [], "can_approve": False})
             elif line["short"] > 0:
                 state["line_checks"].append({"id": f"line-short-{n}", "kind": "partial", "title": f"Only part of the {need['name'].lower()} can arrive by {when}", "text": f"You asked for {asked}. Valio has {need['quantity'] - line['short']:,.0f} {unit} that can arrive in time; {line['short']:,.0f} {unit} are short. Approve the part delivery, or ask for a later day.", "row_ids": ids, "can_approve": True})
             elif line["split"]:
@@ -858,7 +859,8 @@ def place(draft_id, assistant=False):
         raise k.KitchenError(
             "This order changed since you approved it. Check the items that need your OK, then place it again."
         )
-    oid = "AU-" + draft_id[:8].upper()
+    # Private demo copies share draft ids with their template, so the number also depends on the account.
+    oid = "AU-" + (draft_id[:8] if account_id() == "aurora" else hashlib.sha256((account_id() + draft_id).encode()).hexdigest()[:8]).upper()
     approvals = [
         {"label": check_label(c), "by": c["approved_by"], "at": c["approved_at"]}
         for c in out["checks"]
