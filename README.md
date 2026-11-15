@@ -1,60 +1,94 @@
-# Valio Aimo kitchen ordering portal
+# Valio menu-to-delivery
 
-Live: https://valio-menu-to-delivery.vercel.app
+Turn a chef's menu into a checked purchasing plan, then approve the test order through the kitchen workspace or an authenticated agent.
 
-Hotel Aurora's weekly order is computed from its recipes, bookings and current stock. Valio supplies real customer prices, stock, available dates, pack comparisons and cut-offs. Ask Valio interprets typed requests, microphone recordings and photographs through Gemini. The chef reviews the actual supply, pack and spend decisions before placing an order.
+[Open the kitchen](https://valio.72.61.22.106.sslip.io) · [MCP endpoint](https://valio.72.61.22.106.sslip.io/mcp/) · [Evaluation notes](eval/README.md)
 
-The remote MCP server uses the same engine and account rules. Outside assistants can find products, check prices and stock, prepare orders and place orders within their authority. Confirmation stores the order in the private account ledger. The sponsor has no order API, so nothing ships.
+Built by Shreyansh, team The CS Guy, for Junction 2026's Valio Trusted Trade Agents challenge.
 
-## Run
+## A kitchen workflow
 
-Use process environment variables `VALIO_API_KEY`, `GEMINI_API_KEY`, and `BLOB_READ_WRITE_TOKEN`. Never write credentials into the repository. Vercel already has the entry's credentials and private Blob store connected.
+Start a private Hotel Aurora kitchen. Enter a menu by typing, photo or voice, choose guest counts, and review the ingredients the assistant extracted. The application subtracts stock, converts quantities into supplier packs and shows the proposed order.
 
+The chef can inspect allergens, substitutions, delivery cut-offs and spending rules before approval. Each visitor gets a private copy with separate orders and an MCP bearer token. Web and MCP actions apply the same checks, including cumulative weekly and monthly spending limits.
+
+Supplier quotes and availability come from Valio's test API. Order confirmations are application records. Nothing ships, and no supplier fulfilment endpoint is connected.
+
+## Current architecture
+
+```mermaid
+flowchart LR
+    I[Typed menu, image or voice] --> G[Gemini intake]
+    G --> P[Reviewed ingredients and portions]
+    P --> R[Stock subtraction and pack arithmetic]
+    R --> Q[Shared supplier request queue and cache]
+    Q --> V[Valio test API]
+    V --> C[Allergen, substitution and budget checks]
+    C --> A[Chef approval in web or authenticated MCP]
+    A --> D[Private kitchen order store]
 ```
+
+Gemini interprets input. Deterministic code handles quantities, pack rounding, approvals and spending rules. A shared, spaced supplier queue with retries prevents each visitor from independently hammering the supplier API. Cached supplier responses can be up to 30 minutes old and the UI identifies them.
+
+The current Python/FastAPI service and persistent SQLite storage run on the VPS. The older Vercel URL is not the current demo. The current service does not rely on the Mac.
+
+## Sponsor integrations
+
+| Service | Current state and intended use |
+| --- | --- |
+| Valio | Implemented. Product lookup, supplier quotes and availability use the test API. Order confirmations are application records; there is no supplier fulfilment endpoint. |
+| Gemini API | Implemented. Converts menu text, image and voice input into structured kitchen intent for review. |
+| Codex | Used for implementation, debugging and verification. |
+| CRACI | **Planned, not implemented.** Run Python tests and frontend checks on CRACI CI. |
+| Cloudinary | **Planned, not implemented.** Store the chef's uploaded menu photo and deliver resized images for the intake view. |
+| ElevenLabs | **Planned, not implemented.** Transcribe Ask Valio voice input and speak concise confirmations. Existing voice input does not establish ElevenLabs use. |
+| Aiven | **Planned, not implemented.** Move private kitchen orders and budget accounting to Aiven PostgreSQL. SQLite is still the current store. |
+
+These planned services have draft prize selections. They are not completed sponsor integrations.
+
+## Run locally
+
+Use Python and Node.js. Supply `VALIO_API_KEY` and `GEMINI_API_KEY` through the process environment. Keep private kitchen bearer tokens out of logs and committed files.
+
+```bash
 uv venv .venv
 uv pip install --python .venv/bin/python -r requirements-dev.txt
 npm ci
 .venv/bin/python -m uvicorn api.index:app --port 8077
 ```
 
-Without Blob credentials, local development uses SQLite at `/tmp/valio-aurora.sqlite`. Vercel refuses to fall back to temporary storage. Private Blob documents use conditional ETag writes to prevent lost updates. Draft IDs are random and orders are idempotent by draft ID. An immutable order snapshot is saved before its pointer commits to the ledger, so a failed convenience-draft write cannot alter the recorded price on retry. Pending assistant drafts are indexed for chef review. Each confirmed order retains its exact prices and receipt.
+`AURORA_LOCAL_DB` selects the local SQLite file. Its default is under `/tmp`, which is unsuitable for durable production storage. The account store also supports `STORE_URL`, `STORE_KEY` and `STORE_SECRET` for a configured remote store. Do not infer that this alternative is Aiven.
 
-The demo-account sign-in uses an expiring, HttpOnly, same-site cookie. The MCP endpoint is deliberately public and scoped only to this synthetic account. It accepts no arbitrary customer identifier, chef identity or caller-supplied approval. Do not use this public demo connector for a production kitchen.
+Live supplier paths require the test credentials and reachable supplier service. A fresh visitor kitchen should start clean; do not use another visitor's token or seed repeated test orders into the public starting experience.
 
-## Quality commands
+## Validation
 
-```
+```bash
 .venv/bin/python -m pytest -q
-npm test
 npm run check
-npx playwright test
-.venv/bin/python scripts/mcp_client.py https://valio-menu-to-delivery.vercel.app
-node scripts/verify_media.cjs
-node scripts/verify_controls.cjs
 ```
 
-`verify_media.cjs` passes the synthetic voice fixture through the browser's actual MediaRecorder and Gemini, then uploads a menu photograph. It verifies the recording and interpretation pipeline; it does not represent a physical microphone test. `verify_controls.cjs` saves rules through the real controls, verifies web and MCP blocking, opens an assistant draft, restores the original rules, adds a catalogue item, and opens an invoice. Run it separately from the main acceptance suite because the demo account is shared.
+`npm run e2e` runs browser flow/request checks. Tests that write must use isolated test kitchens and clean up their own data. Do not run shared-account order scripts during recording.
 
-The Python supplier fixtures and JSDOM fixtures are synthetic test data and are never served by the product. The Playwright test uses the deployed URL and actual Valio/Gemini responses. `BASE_URL` may override it for local verification. Screenshots, console reports and measured MCP results go to `artifacts/e2e/`.
+The owner recorded 80/80 unit checks and a stress run with 220 UI steps, 60 Ask requests and 10 browser sessions without failed steps, stale offers, nut leaks or duplicate order numbers. Recorded Ask latency was p50 5.6 seconds and p95 10.3 seconds. These are measured results for that run, not a new independent rerun or a judge score. The current handoff identifies live build `70daa59`.
 
-`portal.py` enforces current weekly-order limits, swap approval, allergen restrictions and larger-change thresholds for every web and MCP mutation. Approval fingerprints bind current rules, products, pack quantities and prices. A quantity edit reopens affected approvals; fresh quotes at commitment invalidate changed prices. A “Don't allow” limit, missing supply, past cut-off or recipe shortage cannot be approved away.
+Pack rounding can still disagree with the supplier's accounting. Test orders never establish real delivery. Inspect the displayed supplier cache age and cut-off before approving a plan.
 
-The weekly limit applies to each weekly order, matching the setting's “When an order goes over” language. It is not a cumulative account spending cap. The monthly account summary includes all stored confirmations. A cumulative cap would block the spec's subsequent outside-assistant order after the chef approves an over-limit wedding order, so this interpretation is recorded in the spec gaps.
+## Planned architecture and acceptance
 
-## Data provenance and spec gaps
+```mermaid
+flowchart LR
+    P[Menu photo] -. planned .-> C[Cloudinary originals and resized delivery]
+    V[Chef voice] -. planned .-> E[ElevenLabs transcription]
+    E -. reviewed intent .-> A[Existing Ask Valio checks]
+    A -. planned spoken confirmation .-> E
+    A -. planned durable orders .-> D[Aiven PostgreSQL]
+```
 
-Hotel Aurora's menus, guest counts, stock, recipes, team and historical quantities are authored sample account records. Historical account totals are computed from those quantities and actual Valio customer prices, checked at account initialization. They are sample invoices, not supplier invoices. Kitchen profile and invoice details state this.
+Implementation remains pending approval. Cloudinary completion needs an actual upload and transformed delivery URL, plus the sponsor's separate hackathon survey. ElevenLabs needs a real voice round trip while leaving final order approval explicit. Aiven needs durable order reads after restart, transactional budget enforcement and visitor isolation. CRACI needs a successful CI run using `runs-on: craci`.
 
-The Valio availability API supplies available dates and supplier cut-offs, but no arrival times. The portal says “Arrival time to confirm” rather than inventing 07:00. Requested delivery days are the account's connected schedule. A product is accepted only if Valio confirms availability by that day and its cut-off has not passed.
+Do not mark any addition implemented until these checks pass. Photo retention and deletion must follow the kitchen's privacy requirements; order tokens and private menus do not belong in public evidence.
 
-The actual wedding supply decision currently concerns unavailable salmon and an available recipe-safe trout fillet. The actual cheaper cream pack is 1.75 L. The spec's whitefish, pike-perch and 10 L examples are not fabricated when the live data differs.
+## Repository guide
 
-The built-in browser host was unavailable during implementation. The explicitly requested Playwright acceptance uses headless Chromium. Physical microphone use and the real Claude custom-connector recording remain separate manual checks.
-
-## MCP
-
-Streamable HTTP: https://valio-menu-to-delivery.vercel.app/mcp/
-
-Tools: `find_products`, `check_stock_and_prices`, `prepare_order`, `place_order`.
-
-The outside client script initializes MCP, lists tools, quotes a product, prepares “breakfast for 40 for Wednesday”, and places the returned draft. It uses HTTPS and no browser cookies or approval overrides. The browser acceptance verifies its resulting order in Orders, Recent orders and the bell.
+`api/index.py` starts the web service. `chefagent/` contains kitchen logic, supplier access and the account store. `tests/` holds regression checks; `scripts/` contains browser checks. Read [DECISIONS.md](DECISIONS.md) for design trade-offs and [eval/README.md](eval/README.md) for evaluation context.
