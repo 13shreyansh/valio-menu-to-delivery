@@ -1,3 +1,5 @@
+// Legacy jsdom tests for the pre-review UI (start card, old hooks). Not run:
+// the screens they cover are exercised by scripts/e2e_flow.cjs and scripts/e2e_requests.cjs.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
@@ -20,7 +22,7 @@ function setup() {
   w.fetch = async () => ({ ok: true, json: async () => ({}) });
   w.eval(
     code +
-      `;window.hooks={render,state:S,esc,orderPage,start,ensureDraft,rulesView,checklistLabel,microphone,saveRule,flushRules:()=>ruleQueue,fakeRecording:()=>{S.listening=true;recordingSession={recorder:{stop:()=>{window.micStopped=true}},stream:{getTracks:()=>[{stop:()=>{window.trackStopped=true}}]}}}};`,
+      `;window.hooks={render,state:S,esc,orderPage,ensureDraft,rulesView,checklistLabel,microphone,saveRule,flushRules:()=>ruleQueue,fakeRecording:()=>{S.listening=true;recordingSession={recorder:{stop:()=>{window.micStopped=true}},stream:{getTracks:()=>[{stop:()=>{window.trackStopped=true}}]}}}};`,
   );
   return { dom, w, errors };
 }

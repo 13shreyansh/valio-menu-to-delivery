@@ -2,9 +2,9 @@
   "name": "valio-kitchen-sheet",
   "private": true,
   "scripts": {
-    "test": "node --test tests/ui.test.cjs",
+    "test": ".venv/bin/python -m pytest -q",
     "check": "node --check public/app.js",
-    "pretest": ".venv/bin/python scripts/ui_fixtures.py"
+    "e2e": "node scripts/e2e_flow.cjs && PHONE=1 node scripts/e2e_flow.cjs && node scripts/e2e_requests.cjs"
   },
   "devDependencies": {
     "@fontsource/hanken-grotesk": "^5.3.0",
