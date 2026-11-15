@@ -40,6 +40,22 @@ def database_probe(identity):
         results = list(pool.map(writer, [200, 300]))
     assert sorted(results) == ["committed", "conflict"]
     assert Store("accounts/" + identity).get("rules")[1] == "2"
+    # A canary import must catch up SQLite changes without replacing cloud writes.
+    import_key = "accounts/" + identity + "/migration-probe"
+    backend = store.aiven
+    assert backend.import_documents([(import_key, '{"source":1}', 1)]) == 1
+    assert backend.import_documents([(import_key, '{"source":2}', 2)]) == 1
+    store.put("migration-probe", {"cloud": True}, "2")
+    rollback_key = "accounts/" + identity + "/rollback-probe"
+    backend.import_documents([(rollback_key, '{"source":1}', 1)])
+    try:
+        backend.import_documents([(rollback_key, '{"source":2}', 2), (import_key, '{"source":3}', 3)])
+    except Conflict:
+        pass
+    else:
+        raise AssertionError("An import overwrote concurrent cloud data")
+    assert backend.get(rollback_key) == ({"source": 1}, "1")
+    assert backend.get(import_key) == ({"cloud": True}, "3")
     store.put("mcp", {"token": "nonfunctional-test-marker"})
     target = "accounts/test-" + uuid.uuid4().hex
     assert clone_account("accounts/" + identity, target)
@@ -48,7 +64,8 @@ def database_probe(identity):
     Store(target).put("rules", {"weekly_limit": 400}, "1")
     assert store.get("rules")[0] != Store(target).get("rules")[0]
     return {"provider": "Aiven PostgreSQL", "concurrent_winners": 1, "conflicts": 1,
-            "separate_connection_read": True, "private_clone_isolated": True, "cloned_token": False}
+            "separate_connection_read": True, "private_clone_isolated": True, "cloned_token": False,
+            "migration_catch_up": True, "concurrent_cloud_overwrite": False, "import_atomic": True}
 
 
 def photo_probe(path):

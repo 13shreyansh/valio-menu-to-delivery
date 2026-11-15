@@ -25,7 +25,7 @@ if __name__ == "__main__":
         backend = AivenDocuments(os.environ["AIVEN_DATABASE_URL"])
         inserted = backend.import_documents(rows)
         # Compare source and cloud documents without exposing either in logs.
-        matching = sum(backend.get(key) == (__import__('json').loads(body), str(version)) for key, body, version in rows)
-        print(f"Imported {inserted}; exact source matches {matching}/{len(rows)}.")
+        matching = backend.verify_import(rows)
+        print(f"Imported or safely advanced {inserted}; exact source matches {matching}/{len(rows)}.")
         if matching != len(rows):
             raise SystemExit("Cloud documents differ. Keep the previous runtime and reconcile before switching.")

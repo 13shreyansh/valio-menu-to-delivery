@@ -3,6 +3,7 @@ from contextvars import copy_context
 from .account_scope import account_id,account_name
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse, Response
+from starlette.concurrency import run_in_threadpool
 from . import portal as p, kitchen as k
 from .kitchen_intake import understand
 from .valio_api import ValioBusy
@@ -41,6 +42,10 @@ def login():
         private = "demo-" + uuid.uuid4().hex
         if clone_account(SEED, "accounts/" + private) or clone_account("accounts/aurora-v3", "accounts/" + private):
             acct = private
+        else:
+            # A missing template during a storage migration must never turn
+            # separate visitors into writers of the shared kitchen.
+            raise k.KitchenError("Your private kitchen could not be prepared. Please try again shortly.")
     r = JSONResponse({"account": account_name()})
     r.set_cookie(
         "aurora_account",
@@ -118,14 +123,14 @@ def search(q: str = ""):
 async def transcribe(req: Request):
     from .sponsor_media import transcribe as read_recording
     body = await req.json()
-    return read_recording(body.get("media"))
+    return await run_in_threadpool(read_recording, body.get("media"))
 
 
 @router.post("/media/menu", dependencies=[Depends(signed_in)])
 async def menu_photo(req: Request):
     from .sponsor_media import upload_menu
     body = await req.json()
-    return upload_menu(body.get("media"))
+    return await run_in_threadpool(upload_menu, body.get("media"))
 
 
 @router.post("/drafts/{draft_id}/spoken-confirmation", dependencies=[Depends(signed_in)])

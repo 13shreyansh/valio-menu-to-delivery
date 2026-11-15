@@ -4,6 +4,7 @@ The ledger is one versioned row per account. Its compare-and-swap update is the
 order commitment point, so concurrent browser/MCP writers cannot lose orders.
 """
 import json
+import hashlib
 import os
 import threading
 from contextlib import contextmanager
@@ -112,14 +113,47 @@ class AivenDocuments:
             raise KitchenError("A private kitchen could not be prepared. Please try again.") from None
 
     def import_documents(self, rows):
-        """Import an existing SQLite snapshot without replacing any cloud document."""
+        """Import SQLite, or catch up only rows unchanged since our last import.
+
+        A canary can use private clones while the old runtime still writes SQLite.
+        At cutover, changed source rows may advance only when their cloud version
+        and body still equal our previous receipt. Cloud writes are never lost.
+        """
         from psycopg.types.json import Jsonb
+        from .account_store import Conflict
+        digest = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         count = 0
         with self.connect() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS valio_imports (
+                source TEXT NOT NULL, key TEXT NOT NULL, version BIGINT NOT NULL,
+                body_hash TEXT NOT NULL, PRIMARY KEY(source,key)
+            )""")
             for key, body, version in rows:
-                result = db.execute(
+                value = json.loads(body)
+                wanted_hash = digest(value)
+                inserted = db.execute(
                     "INSERT INTO valio_docs (key,body,version) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
-                    (key, Jsonb(json.loads(body)), version),
+                    (key, Jsonb(value), version),
                 )
-                count += result.rowcount
+                if inserted.rowcount:
+                    count += 1
+                else:
+                    current = db.execute("SELECT body,version FROM valio_docs WHERE key=%s FOR UPDATE", (key,)).fetchone()
+                    previous = db.execute("SELECT version,body_hash FROM valio_imports WHERE source=%s AND key=%s", ("aurora-sqlite-v1", key)).fetchone()
+                    same = current[1] == version and digest(current[0]) == wanted_hash
+                    if not same:
+                        if not previous or current[1] != previous[0] or digest(current[0]) != previous[1] or version < previous[0]:
+                            raise Conflict("Cloud account data changed after import. Keep the current runtime and reconcile before switching.")
+                        db.execute("UPDATE valio_docs SET body=%s,version=%s,updated_at=now() WHERE key=%s", (Jsonb(value), version, key))
+                        count += 1
+                db.execute("""INSERT INTO valio_imports (source,key,version,body_hash) VALUES (%s,%s,%s,%s)
+                    ON CONFLICT(source,key) DO UPDATE SET version=excluded.version,body_hash=excluded.body_hash""",
+                    ("aurora-sqlite-v1", key, version, wanted_hash))
         return count
+
+    def verify_import(self, rows):
+        """Compare in one connection, without exposing account values in output."""
+        expected = {key: (json.loads(body), int(version)) for key, body, version in rows}
+        with self.connect() as db:
+            actual = db.execute("SELECT key,body,version FROM valio_docs WHERE key=ANY(%s)", (list(expected),)).fetchall()
+        return sum(expected[key] == (body, version) for key, body, version in actual)

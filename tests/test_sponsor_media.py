@@ -10,6 +10,41 @@ from chefagent import sponsor_media as media
 from chefagent.kitchen import KitchenError
 
 
+def test_missing_seed_never_issues_a_shared_kitchen_cookie(monkeypatch):
+    from fastapi.testclient import TestClient
+    from api.index import app
+    from chefagent import portal_routes
+    monkeypatch.setattr(portal_routes, "clone_account", lambda *args: False)
+    client = TestClient(app, base_url="https://testserver")
+    try:
+        response = client.post("/api/login")
+        assert response.status_code == 422
+        assert "aurora_account" not in response.cookies
+        assert "private kitchen" in response.json()["error"]
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize("route_name,provider_name", [("menu_photo", "upload_menu"), ("transcribe", "transcribe")])
+def test_provider_work_is_off_event_loop_and_preserves_private_kitchen(monkeypatch, route_name, provider_name):
+    import asyncio
+    import threading
+    from chefagent import portal_routes
+    from chefagent.account_scope import kitchen_scope, account_id
+    event_loop_thread = threading.get_ident()
+    identity = "test-" + "e" * 32
+    def provider(value):
+        assert threading.get_ident() != event_loop_thread, "Provider work blocks the event loop"
+        assert account_id() == identity, "Provider work lost private-account scope"
+        return {"ok": True}
+    monkeypatch.setattr(media, provider_name, provider)
+    class Request:
+        async def json(self):
+            return {"media": {}}
+    with kitchen_scope(identity):
+        assert asyncio.run(getattr(portal_routes, route_name)(Request())) == {"ok": True}
+
+
 def photo():
     out = io.BytesIO()
     Image.new("RGB", (1600, 1200), "white").save(out, format="PNG")
