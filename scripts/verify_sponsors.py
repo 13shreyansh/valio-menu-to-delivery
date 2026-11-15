@@ -45,6 +45,8 @@ def database_probe(identity):
     import_key = "accounts/" + identity + "/migration-probe"
     backend = store.aiven
     assert backend.import_documents([(import_key, '{"source":1}', 1)]) == 1
+    assert backend.pending_import([(import_key, '{"source":1}', 1)]) == []
+    assert len(backend.pending_import([(import_key, '{"source":2}', 2)])) == 1
     assert backend.import_documents([(import_key, '{"source":2}', 2)]) == 1
     store.put("migration-probe", {"cloud": True}, "2")
     rollback_key = "accounts/" + identity + "/rollback-probe"

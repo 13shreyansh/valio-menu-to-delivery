@@ -161,9 +161,14 @@ class AivenDocuments:
                     ("aurora-sqlite-v1", key, version, wanted_hash))
         return count
 
-    def verify_import(self, rows):
-        """Compare in one connection, without exposing account values in output."""
+    def pending_import(self, rows):
+        """Find source differences with one query instead of per-document probes."""
         expected = {key: (json.loads(body), int(version)) for key, body, version in rows}
         with self.connect() as db:
             actual = db.execute("SELECT key,body,version FROM valio_docs WHERE key=ANY(%s)", (list(expected),)).fetchall()
-        return sum(expected[key] == (body, version) for key, body, version in actual)
+        current = {key: (body, version) for key, body, version in actual}
+        return [row for row in rows if current.get(row[0]) != expected[row[0]]]
+
+    def verify_import(self, rows):
+        """Compare in one connection, without exposing account values in output."""
+        return len(rows) - len(self.pending_import(rows))

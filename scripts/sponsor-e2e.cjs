@@ -64,6 +64,11 @@ const photoPath = path.resolve("public/whiteboards/menu-3.jpg");
       await page.waitForFunction(() => { const i = document.querySelector('img[alt="Your attached menu photo"]'); return i?.complete && i.naturalWidth > 0; });
       assert.ok(await image.evaluate(e => e.naturalWidth <= 960 && e.naturalHeight <= 960));
       assert.match(await image.getAttribute("src"), /^https:\/\/res\.cloudinary\.com\//);
+      assert.ok(await page.evaluate(() => {
+        const header = document.querySelector(".drawer-header").getBoundingClientRect();
+        const send = document.querySelector('[data-action="send"]').getBoundingClientRect();
+        return header.top >= 0 && header.bottom <= innerHeight && send.top >= 0 && send.bottom <= innerHeight;
+      }), "Photo preview must keep the close and send controls on screen");
       await shot("saved-menu-photo");
       await page.locator('[data-action="send"]').click();
       await page.locator(".ask-result").waitFor({ state: "visible", timeout: 120000 });

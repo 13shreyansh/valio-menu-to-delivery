@@ -24,7 +24,8 @@ if __name__ == "__main__":
     else:
         try:
             backend = AivenDocuments(os.environ["AIVEN_DATABASE_URL"])
-            inserted = backend.import_documents(rows)
+            pending = backend.pending_import(rows)
+            inserted = backend.import_documents(pending) if pending else 0
             # Compare source and cloud documents without exposing either in logs.
             matching = backend.verify_import(rows)
             print(f"Imported or safely advanced {inserted}; exact source matches {matching}/{len(rows)}.")
