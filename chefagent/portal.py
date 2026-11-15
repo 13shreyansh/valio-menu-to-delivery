@@ -582,6 +582,7 @@ def apply_request(
             "draft_id": draft_id,
         }
     before = build(state, book=book, rule=rule)
+    earlier = (state.get("previous_rows"), state.get("previous_total"))
     state["previous_rows"] = copy.deepcopy([{key: v for key, v in r.items() if key not in ("allocations", "options")} for r in before["rows"]])
     state["previous_total"] = before["total"]
     state["request"] = reading["transcript"]
@@ -589,7 +590,6 @@ def apply_request(
     state["reading"] = reading
     state["calls"] = calls
     state["line_checks"] = []
-    state["wedding"] = None
     if reading.get("kind") == "close":
         state["services_override"] = [
             service
@@ -684,9 +684,17 @@ def apply_request(
                 state["line_checks"].append({"id": f"line-short-{n}", "kind": "partial", "title": f"Only part of the {need['name'].lower()} can arrive by {when}", "text": f"You asked for {asked}. Valio has {need['quantity'] - line['short']:,.0f} {unit} that can arrive in time; {line['short']:,.0f} {unit} are short. Approve the part delivery, or ask for a later day.", "row_ids": ids, "can_approve": True})
             elif line["split"]:
                 state["line_checks"].append({"id": f"line-split-{n}", "kind": "partial", "title": f"{need['name'].capitalize()} split across {len(ids)} products", "text": f"No single product has {asked} in stock for {when}, so Valio filled it from the cheapest products first.", "row_ids": ids, "can_approve": True})
+    if state.get("menu_events") is not None:
+        state["wedding"] = state["menu_events"][-1] if state["menu_events"] else None
     state["overrides"] = {key: v for key, v in state["overrides"].items() if key.startswith("extra-")}
     state["keep_original"] = False
     out = build(state, fresh=True, progress=progress, book=book, rule=rule)
+    same = lambda rows: sorted((r["id"], r["product_id"], r["units"]) for r in rows)
+    if earlier[0] is not None and same(out["rows"]) == same(before["rows"]) and len(out["checks"]) == len(before["checks"]):
+        # Saying the same thing twice changes nothing: keep showing what the first request changed.
+        state["previous_rows"], state["previous_total"] = earlier
+        out = build(state, book=book, rule=rule)
+        out["unchanged"] = True
     if progress:
         progress("allergens", out)
         progress("budget", out)

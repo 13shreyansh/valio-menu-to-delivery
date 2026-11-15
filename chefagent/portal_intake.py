@@ -113,7 +113,7 @@ Return exactly this shape:
    "modifier": text or null, "modifier_allergens": [allergen names]}}],
  "products": [{{"name": short English name as requested, "search_fi": Finnish catalogue words, "search_en": English catalogue words, "quantity": number, "unit": "l"|"kg"|"pcs", "lactose_free": boolean, "gluten_free": boolean, "vegan": boolean, "organic": boolean, "product_id": catalogue code if one was written, else null}}],
  "dietary": [{{"allergen": one of {", ".join(ALLERGENS)}, lactose, "guests": integer or null, "label": short English phrase such as "3 dairy-free guests"}}],
- "assumptions": [short English sentences, one per thing you assumed],
+ "assumptions": [short plain English sentences written to the chef, one per guest count, day, menu or portion you assumed; never mention allergens, modifiers or JSON fields here],
  "question": null or one plain English sentence}}
 
 How to decide kind:

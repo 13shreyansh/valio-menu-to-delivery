@@ -159,6 +159,10 @@ def build(state, fresh=False, context=None, progress=None):
                 label=INGREDIENTS[role].get('label') or role.replace('_',' ')
                 checks.append({'id':'gap-'+day+'-'+role,'kind':'gap','text':(f'Valio has no product matching {label} that fits your kitchen rules. Change the dish or add a product from the catalogue.' if not INGREDIENTS[role]['ids'] else f'No {label} that fits your rules can be delivered on {nice_day(day)}. Change the menu or the day.'),
                                'button':'Check menu','blocking':True,'can_approve':False,'row_ids':[]})
+                if role.startswith('x-') and not INGREDIENTS[role]['ids']:
+                    # An ingredient of an assumed recipe is the chef's call, not a hard stop.
+                    checks[-1].update(kind='assumed',can_approve=True,title=f'No product found for {label}',
+                        text=f'Valio found no product for {label} that fits your kitchen rules. Approve to order the rest of this dish without it, or add a product from the catalogue.')
                 continue
             p,pr,av,pack,source,units = candidates[0]
             rid = day+'-'+role

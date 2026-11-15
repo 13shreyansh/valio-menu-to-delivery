@@ -354,6 +354,7 @@ function summary(o) {
   const amount = `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}`;
   if (o.reading?.kind === "note")
     return "Noted. Nothing was added to the order.";
+  if (o.unchanged) return "This is already in your order. Nothing changed.";
   const none = o.checks.find((c) => c.id.startsWith("line-none"));
   if (none) return esc(none.title) + ".";
   if (!n && Math.abs(delta) < 0.005)
@@ -921,9 +922,11 @@ async function send() {
   const oldTotal = S.order.total;
   S.input = $("#ask-input")?.value || S.input;
   if (!S.input.trim() && !S.media) return;
-  const text = S.question
-    ? (S.questionContext || S.request) + ". " + S.input.trim()
-    : S.input.trim();
+  // A short reply answers Valio's question. A full sentence is a new request.
+  const text =
+    S.question && S.input.trim().length < 60
+      ? (S.questionContext || S.request) + ". " + S.input.trim()
+      : S.input.trim();
   S.request = text || S.mediaName;
   S.requestAt = new Date().toISOString();
   S.input = "";
