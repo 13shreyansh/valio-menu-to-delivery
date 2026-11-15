@@ -20,10 +20,11 @@ class Conflict(KitchenError):
 class Store:
     def __init__(self, namespace=None):
         self.namespace=namespace or storage_namespace()
-        self.token = None
         self.pg = os.environ.get("STORE_URL")
         self.pg_key = os.environ.get("STORE_KEY")
-        if not self.pg and os.environ.get("VERCEL"):
+        # Vercel Blob remains the fallback on Vercel when no Postgres store is configured.
+        self.token = None if self.pg else os.environ.get("BLOB_READ_WRITE_TOKEN")
+        if not self.pg and not self.token and os.environ.get("VERCEL"):
             raise KitchenError("Account storage is unavailable. Please try again.")
         self.local = Path(os.environ.get("AURORA_LOCAL_DB", "/tmp/valio-aurora.sqlite"))
 

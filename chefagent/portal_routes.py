@@ -117,8 +117,8 @@ async def ask(req: Request):
 
         def progress(stage, data):
             elapsed = time.monotonic() - last[0]
-            if elapsed < 0.6:
-                time.sleep(0.6 - elapsed)
+            if elapsed < 0.35:
+                time.sleep(0.35 - elapsed)
             last[0] = time.monotonic()
             result = None
             attention = False

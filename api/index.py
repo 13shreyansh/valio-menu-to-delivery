@@ -59,7 +59,7 @@ def health():
     return {
         "ok": True,
         "build_commit": os.environ.get("VERCEL_GIT_COMMIT_SHA"),
-        "storage": bool(os.environ.get("STORE_URL")),
+        "storage": bool(os.environ.get("STORE_URL") or os.environ.get("BLOB_READ_WRITE_TOKEN") or not os.environ.get("VERCEL")),
         "valio": bool(os.environ.get("VALIO_API_KEY")),
         "gemini": bool(os.environ.get("GEMINI_API_KEY")),
     }
