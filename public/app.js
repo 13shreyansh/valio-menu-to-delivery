@@ -76,12 +76,28 @@ const nav = [
   ["Invoices", "/invoices", "receipt"],
   ["Settings", "/settings/rules", "settings"],
 ];
-async function api(path, body) {
-  const r = await fetch("/api" + path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+const plural = (n, word) => `${Number(n).toLocaleString("en-GB")} ${word}${Number(n) === 1 ? "" : "s"}`;
+async function api(path, body, tries = 3) {
+  let r;
+  for (let i = 0; ; i++) {
+    try {
+      r = await fetch("/api" + path, {
+        method: body === undefined ? "GET" : "POST",
+        headers: body === undefined ? {} : { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch {
+      if (i < tries - 1) { await new Promise((ok) => setTimeout(ok, 1500 * (i + 1))); continue; }
+      throw Error("Your connection dropped. Nothing was changed. Try again.");
+    }
+    // The server answers 503 + Retry-After only when Valio's own service was busy and nothing changed,
+    // so repeating the same request is safe.
+    if (r.status === 503 && r.headers.get("Retry-After") && i < tries - 1) {
+      await new Promise((ok) => setTimeout(ok, 1000 * Number(r.headers.get("Retry-After") || 3)));
+      continue;
+    }
+    break;
+  }
   let data;
   try {
     data = await r.json();
@@ -295,7 +311,7 @@ function checklist() {
   return `<div class="checklist" aria-live="polite">${S.steps.map((s, i) => `<div class="checklist-row" data-stage="${i}">${s.done ? (s.attention ? '<i class="attention-dot"></i>' : icon("check", "green")) : '<i class="spinner"></i>'}<span>${esc(s.label)}</span><span class="result ${s.attention ? "amber" : ""}">${esc(s.result)}</span></div>`).join("")}</div>`;
 }
 function deliveryMini(d) {
-  return `<div class="delivery-mini"><span>${date(d.date)}</span><span class="muted">· arrival time to confirm · ${d.rows.filter((r) => r.units > 0).length} products ·</span><span>${money(d.subtotal)}</span></div>`;
+  return `<div class="delivery-mini"><span>${date(d.date)}</span><span class="muted">· arrival time to confirm · ${plural(d.rows.filter((r) => r.units > 0).length, "product")} ·</span><span>${money(d.subtotal)}</span></div>`;
 }
 function dashboard() {
   const o = S.order;
@@ -478,7 +494,7 @@ function orderPage(o, readonly = false) {
   const notes = (o.notes || []).length
     ? `<ul class="order-notes">${o.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`
     : "";
-  return `<div class="subline"><span>${o.deliveries.length} deliver${o.deliveries.length === 1 ? "y" : "ies"} · ${count} products · ${readonly ? "Placed " + date(o.placed_at) + (o.placed_at && !o.historical ? " " + time(o.placed_at) + " by " + esc(o.placed_by) : "") : o.source === "Aurora Group assistant" ? "Prepared by Aurora Group assistant · not placed yet" : "Not placed yet"}</span>${btn("How this was decided", "receipt", "secondary")}</div>${readonly && o.rule_note ? `<p class="rule-note">${esc(o.rule_note)}</p>` : ""}${!readonly && o.checks.length ? `<section class="approvals"><h3>Needs your OK (${o.pending})</h3><div class="approval-box">${o.checks.map((c) => approval(c, o)).join("")}</div></section>` : ""}${!readonly ? notes : ""}${!readonly ? `<div class="filter" aria-label="Order products">${btn(`Changed (${changed})`, "filter", S.filter === "changed" ? "active" : "", 'data-value="changed"')}${btn(`All (${count})`, "filter", S.filter === "all" ? "active" : "", 'data-value="all"')}</div>` : '<div style="height:16px"></div>'}${
+  return `<div class="subline"><span>${o.deliveries.length} deliver${o.deliveries.length === 1 ? "y" : "ies"} · ${plural(count, "product")} · ${readonly ? "Placed " + date(o.placed_at) + (o.placed_at && !o.historical ? " " + time(o.placed_at) + " by " + esc(o.placed_by) : "") : o.source === "Aurora Group assistant" ? "Prepared by Aurora Group assistant · not placed yet" : "Not placed yet"}</span>${btn("How this was decided", "receipt", "secondary")}</div>${readonly && o.rule_note ? `<p class="rule-note">${esc(o.rule_note)}</p>` : ""}${!readonly && o.checks.length ? `<section class="approvals"><h3>Needs your OK (${o.pending})</h3><div class="approval-box">${o.checks.map((c) => approval(c, o)).join("")}</div></section>` : ""}${!readonly ? notes : ""}${!readonly ? `<div class="filter" aria-label="Order products">${btn(`Changed (${changed})`, "filter", S.filter === "changed" ? "active" : "", 'data-value="changed"')}${btn(`All (${count})`, "filter", S.filter === "all" ? "active" : "", 'data-value="all"')}</div>` : '<div style="height:16px"></div>'}${
     o.deliveries
       .map((d) => {
         const rows = d.rows.filter(
@@ -665,7 +681,7 @@ function offers(o) {
     )
     .join(
       "",
-    )}<p class="tiny">${r.compared} matching products checked live at Valio.</p></div>`;
+    )}<p class="tiny">${plural(r.compared, "matching product")} checked live at Valio.</p></div>`;
 }
 function drawer() {
   if (S.drawer === "receipt") return receipt();
@@ -748,7 +764,7 @@ function callSummary(c) {
   const count =
     c.product_count ?? c.product_ids?.length ?? c.response?.products?.length;
   const products =
-    count === undefined ? "" : ` · ${count.toLocaleString("en-GB")} products`;
+    count === undefined ? "" : ` · ${plural(count, "product")}`;
   const delivery = c.requested_date ? ` for ${date(c.requested_date)}` : "";
   if (c.path?.includes("products/download"))
     return `Loaded Valio's catalogue${products}`;

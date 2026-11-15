@@ -113,7 +113,7 @@ Return exactly this shape:
    "modifier": text or null, "modifier_allergens": [allergen names]}}],
  "products": [{{"name": short English name as requested, "search_fi": Finnish catalogue words, "search_en": English catalogue words, "quantity": number, "unit": "l"|"kg"|"pcs", "lactose_free": boolean, "gluten_free": boolean, "vegan": boolean, "organic": boolean, "product_id": catalogue code if one was written, else null}}],
  "dietary": [{{"allergen": one of {", ".join(ALLERGENS)}, lactose, "guests": integer or null, "label": short English phrase such as "3 dairy-free guests"}}],
- "assumptions": [short plain English sentences written to the chef, one per guest count, day, menu or portion you assumed; never mention allergens, modifiers or JSON fields here],
+ "assumptions": [short plain British English sentences written to the chef, one per guest count, day, menu or portion you assumed, each saying what you did and why, for example "Tuesday has no delivery, so this arrives on Monday 16 Nov." or "50 guests × 0.2 l of milk each = 10 l."; never start with "Assumed"; never mention allergens, modifiers or JSON fields here],
  "question": null or one plain English sentence}}
 
 How to decide kind:
@@ -379,6 +379,21 @@ def quote_options(product, date, policy, api, calls):
     return options, delivery
 
 
+MILK_KINDS = (("rasvaton", "skimmed milk"), ("kevyt", "semi-skimmed milk"), ("täys", "whole milk"), ("ykkös", "1% milk"))
+
+
+def plain_milk(product):
+    """True when the chef asked for "milk" without saying which kind."""
+    words = (product.get("name") or "").lower()
+    return "milk" in words and not re.search(r"skim|semi|whole|full|light|1 ?%|fat|lactose|oat|soy|almond|organic|butter|sour|cream", words) \
+        and not product.get("product_id") and not product.get("lactose_free")
+
+
+def milk_kind(name):
+    low = name.lower()
+    return next((kind for key, kind in MILK_KINDS if key in low), "milk")
+
+
 def plan_products(reading, rule, calls):
     """Turn requested products into chosen lines, splitting when stock is partial."""
     policy = {"free_from": rule["allergens"], "strict_may_contain": True}
@@ -390,8 +405,18 @@ def plan_products(reading, rule, calls):
         need = {"name": product["name"], "quantity": product["quantity"], "unit": unit, "date": reading["date"]}
         chosen, left = [], product["quantity"]
         ok = [o for o in options if o["status"] == "ok"]
+        plain = plain_milk(product)
+        if plain and ok:
+            # "Milk" with no fat level: a kitchen means semi-skimmed, not the cheapest skimmed milk.
+            semi = [o for o in ok if "kevyt" in o["name"].lower()]
+            if semi:
+                ok = semi + [o for o in ok if o not in semi]
         if ok:
             chosen.append((ok[0], ok[0]["packs"]))
+            if plain:
+                reading.setdefault("assumptions", []).append(
+                    f"You asked for milk without a fat level, so Valio chose {milk_kind(ok[0]['name'])} ({ok[0]['name']}). "
+                    "Other milks are under Why?")
             left = 0
         else:
             for o in [o for o in options if o["status"] == "partial"]:

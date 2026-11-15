@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from . import portal as p, kitchen as k
 from .kitchen_intake import understand
+from .valio_api import ValioBusy
 
 router = APIRouter(prefix="/api")
 
@@ -192,7 +193,7 @@ async def ask(req: Request):
                 {
                     "type": "error",
                     "error": str(exc)
-                    if isinstance(exc, k.KitchenError)
+                    if isinstance(exc, (k.KitchenError, ValioBusy))
                     else "Valio could not finish that check. Your order has not changed. Try again.",
                 }
             )

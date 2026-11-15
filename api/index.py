@@ -13,6 +13,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from chefagent.mcp_server import mcp
 from chefagent.portal_routes import router
 from chefagent.kitchen import KitchenError
+from chefagent.valio_api import ValioBusy
 from chefagent.account_scope import KitchenScopeMiddleware
 
 mcp_app = mcp.streamable_http_app(
@@ -42,6 +43,11 @@ app.add_api_route("/api/sheet/photo/apply", photo_apply, methods=["POST"])
 @app.exception_handler(KitchenError)
 async def error(req, exc):
     return JSONResponse({"error": str(exc)}, status_code=422)
+
+
+@app.exception_handler(ValioBusy)
+async def busy(req, exc):
+    return JSONResponse({"error": str(exc), "retry": True}, status_code=503, headers={"Retry-After": "5"})
 
 
 @app.exception_handler(Exception)
