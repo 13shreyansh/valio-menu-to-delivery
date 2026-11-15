@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from chefagent.account_scope import kitchen_scope
 from chefagent.account_store import Store, Conflict, clone_account
 from chefagent.sponsor_media import upload_menu, transcribe, confirmation_audio
+from chefagent.aiven_store import close_pools
 
 
 def database_probe(identity):
@@ -95,23 +96,30 @@ def speech_probe(path):
             "confirmation_audio_bytes": len(audio), "order_action": False}
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", action="store_true")
     parser.add_argument("--photo", type=Path)
     parser.add_argument("--audio", type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     identity = "test-" + uuid.uuid4().hex
     results = []
-    with kitchen_scope(identity):
-        for name, fn in [("database", lambda: database_probe(identity)), ("photo", lambda: photo_probe(args.photo)), ("audio", lambda: speech_probe(args.audio))]:
-            if not getattr(args, name):
-                continue
-            start = time.monotonic()
-            try:
-                result = fn()
-            except Exception as exc:
-                print(json.dumps({"check": name, "pass": False, "error_class": type(exc).__name__}))
-                raise SystemExit(1) from None
-            results.append({"check": name, "pass": True, "duration_seconds": round(time.monotonic() - start, 3), **result})
+    try:
+        with kitchen_scope(identity):
+            for name, fn in [("database", lambda: database_probe(identity)), ("photo", lambda: photo_probe(args.photo)), ("audio", lambda: speech_probe(args.audio))]:
+                if not getattr(args, name):
+                    continue
+                start = time.monotonic()
+                try:
+                    result = fn()
+                except Exception as exc:
+                    print(json.dumps({"check": name, "pass": False, "error_class": type(exc).__name__}))
+                    raise SystemExit(1) from None
+                results.append({"check": name, "pass": True, "duration_seconds": round(time.monotonic() - start, 3), **result})
+    finally:
+        close_pools()
     print(json.dumps({"scope": "isolated provider acceptance", "results": results}, indent=2))
+
+
+if __name__ == "__main__":
+    main()

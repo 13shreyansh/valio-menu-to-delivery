@@ -26,8 +26,13 @@ mcp_app = mcp.streamable_http_app(
 
 @asynccontextmanager
 async def lifespan(app):
-    async with mcp.session_manager.run():
-        yield
+    try:
+        async with mcp.session_manager.run():
+            yield
+    finally:
+        from chefagent.aiven_store import close_pools
+        from starlette.concurrency import run_in_threadpool
+        await run_in_threadpool(close_pools)
 
 
 app = FastAPI(title="Valio Aimo", lifespan=lifespan)

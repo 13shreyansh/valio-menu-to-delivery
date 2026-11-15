@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 KEYS = {
     "AIVEN_DATABASE_URL", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET",
@@ -30,7 +31,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]+", args.name) or not re.fullmatch(r"[a-f0-9]{40}", args.commit):
         raise SystemExit("Use an explicit canary name and full commit hash.")
-    if not args.ca.is_file() or not args.url.startswith("https://") or not 1024 < args.port < 65536:
+    address = urlsplit(args.url)
+    if (not args.ca.is_file() or address.scheme != "https" or not address.hostname or
+        not address.hostname.endswith(".72.61.22.106.sslip.io") or address.port or address.username or
+        address.path not in ("", "/") or address.query or address.fragment or not 1024 < args.port < 65536):
         raise SystemExit("Use a public CA file, an HTTPS canary URL and a valid private port.")
     provider = json.load(sys.stdin)
     if not isinstance(provider, dict) or set(provider) - KEYS or not all(isinstance(v, str) for v in provider.values()):
@@ -51,6 +55,15 @@ if __name__ == "__main__":
     command = ["docker", "run", "-d", "--name", args.name, "--restart", "unless-stopped",
                "-p", f"127.0.0.1:{args.port}:8000", "--volumes-from", "valio:ro",
                "--mount", f"type=bind,src={args.ca.resolve()},dst=/run/valio/aiven-ca.pem,readonly"]
+    # Docker discovery routes only this new container. No shared proxy restart or production label change.
+    labels = source["Config"].get("Labels") or {}
+    entrypoint = labels.get("traefik.http.routers.valio.entrypoints", "websecure")
+    resolver = labels.get("traefik.http.routers.valio.tls.certresolver", "letsencrypt")
+    command += ["--label", "traefik.enable=true",
+                "--label", f"traefik.http.routers.{args.name}.rule=Host(`{address.hostname}`)",
+                "--label", f"traefik.http.routers.{args.name}.entrypoints={entrypoint}",
+                "--label", f"traefik.http.routers.{args.name}.tls.certresolver={resolver}",
+                "--label", f"traefik.http.services.{args.name}.loadbalancer.server.port=8000"]
     for key in env:
         command += ["--env", key]
     command.append(args.image)

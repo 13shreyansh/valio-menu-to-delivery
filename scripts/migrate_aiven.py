@@ -10,7 +10,7 @@ from pathlib import Path
 import sqlite3
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from chefagent.aiven_store import AivenDocuments
+from chefagent.aiven_store import AivenDocuments, close_pools
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -22,10 +22,13 @@ if __name__ == "__main__":
     if not args.apply:
         print(f"Dry run: {len(rows)} documents available. No writes performed.")
     else:
-        backend = AivenDocuments(os.environ["AIVEN_DATABASE_URL"])
-        inserted = backend.import_documents(rows)
-        # Compare source and cloud documents without exposing either in logs.
-        matching = backend.verify_import(rows)
-        print(f"Imported or safely advanced {inserted}; exact source matches {matching}/{len(rows)}.")
-        if matching != len(rows):
-            raise SystemExit("Cloud documents differ. Keep the previous runtime and reconcile before switching.")
+        try:
+            backend = AivenDocuments(os.environ["AIVEN_DATABASE_URL"])
+            inserted = backend.import_documents(rows)
+            # Compare source and cloud documents without exposing either in logs.
+            matching = backend.verify_import(rows)
+            print(f"Imported or safely advanced {inserted}; exact source matches {matching}/{len(rows)}.")
+            if matching != len(rows):
+                raise SystemExit("Cloud documents differ. Keep the previous runtime and reconcile before switching.")
+        finally:
+            close_pools()

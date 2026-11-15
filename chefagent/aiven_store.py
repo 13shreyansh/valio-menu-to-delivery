@@ -16,6 +16,16 @@ _initialized = set()
 _pools = {}
 
 
+def close_pools():
+    """Close workers while Python is still running, including verification CLIs."""
+    with _schema_lock:
+        pools = list(_pools.values())
+        _pools.clear()
+        _initialized.clear()
+    for pool in pools:
+        pool.close(timeout=5)
+
+
 class AivenDocuments:
     def __init__(self, url):
         self.url = url
