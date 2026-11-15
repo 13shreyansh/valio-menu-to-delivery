@@ -1062,6 +1062,9 @@ select {
 .confirmation .deliveries {
   margin: 24px 0;
 }
+.confirmation > .row {
+  flex-wrap: wrap;
+}
 .confirmation .tiny {
   margin-top: 40px;
 }

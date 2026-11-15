@@ -86,6 +86,7 @@ const photoPath = path.resolve("public/whiteboards/menu-3.jpg");
       assert.equal(spoken.status(), 200);
       assert.ok((await spoken.body()).length > 1000);
       await page.locator('audio[aria-label="Spoken order confirmation"]').waitFor({ state: "visible" });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "Spoken-confirmation controls overflow the screen");
       await shot("spoken-confirmation");
       await page.goto(base + "/orders");
       await page.getByText(number, { exact: true }).first().waitFor({ state: "visible", timeout: 60000 });
