@@ -1,28 +1,14 @@
-Implement the documented Valio sponsor integrations without changing the submitted portal description.
-Store menu photos and resized previews in Cloudinary, and use ElevenLabs for speech input and explicit spoken confirmations.
-Move account documents, order history and cumulative budget writes to Aiven PostgreSQL with version-checked transactions.
-Preserve private kitchens, approval controls, supplier behaviour and existing layouts; test failure paths before release.
-Verify real provider calls and the deployed wide/mobile user flow, then obtain independent review before final publication.
-
-VALIO / Sun 15 Nov 06:20 Helsinki / 70daa59 / https://valio.72.61.22.106.sslip.io
-
-Job paraphrase: fix "Valio is unavailable" (Valio API rate limit), stress test the live site, fix every error and every issue from the independent re-judge (review/REVIEW-2.md, 5.55/10 before fixes), deploy only the valio container, reset the demo account.
+VALIO / 15 Nov 2026 09:24 Helsinki / application e648c83cf8f057df9467c4f7cde12f3771c906a6 / https://valio.72.61.22.106.sslip.io
 
 DONE:
-- Valio API: one shared, spaced queue, 6 tries with backoff, shared cache, last-30-min fallback logged as such, clear "busy, nothing changed" message, browser auto-retry. Root cause: HTTP 429 from junction26.valioaimo.fi, then r.json() on the error body.
-- Each "Try the demo account" gets a private copy of Hotel Aurora (demo-<id>, own MCP token, own order numbers), seeded by scripts/reset_demo.py.
-- Nuts/peanuts/sesame inferred from product names (undeclared almonds, hazelnuts blocked in UI and MCP); undeclared risky products need an OK; placed events keep their stock (wedding after a placed week is no longer EUR 0); diet notes include stock; event-named change reasons; unknown products and rule-excluded products say why; 50,000 L needs an amount check; one request per draft at a time; plain impossible-date answer; offers card, Drafts tab, 390 px how-it-works, no raw None/undefined.
 
-NUMBERS (measured, stress run5 on 70daa59: 10 browser sessions 6x1440 + 4x390, 3 MCP clients):
-- 220 UI steps, 60 Ask Valio requests: 0 failed steps, 0 HTTP 4xx/5xx, 0 console/page errors, 0 stale offers, 0 nut leaks, 0 duplicate order numbers. Ask Valio p50 5.6 s, p95 10.3 s. Server: 0 tracebacks, 0 429s.
-- MCP: bad/no/garbage token 401; place_order refusals only where approval is required or the id is unknown.
-- 80/80 unit tests (4 new regression tests).
+- Released real Cloudinary authenticated menu storage/resizing, ElevenLabs microphone transcription and spoken confirmations, and Aiven private-kitchen orders and budget accounting. Updated the README with actual architecture, configuration and proof. Junction entries and descriptions were not changed.
+- Passed production browser flows at 1440 and 390 pixels with loaded screenshots, then placed a fresh private order and reopened its immutable receipt after restarting the actual production worker. Authenticated MCP discovery and unauthorized-access rejection also passed.
+- Preserved the signing identity and canonical URL, verified the last SQLite delta, and retained the old stopped container. Fixed and regression-tested isolation, provider threading, budget concurrency, pool shutdown and phone wrapping before release.
 
-SCREENSHOTS: scratchpad final-desktop-dashboard.png, final-mobile-dashboard.png, stress/run5/*.png (session tmp dir)
-REVIEW: independent re-judge 5.55/10 before this round (review/REVIEW-2.md); not re-scored after fixes.
-NEXT: re-judge on 70daa59; expire old demo copies (about 1,300 docs in SQLite now, harmless).
-NEEDS DECISION: none
-BLOCKED: none
-
-Reset the demo account: docker exec valio python scripts/reset_demo.py (archives, never deletes; also refreshes the private-copy template).
-Stress test: RUN_LABEL=runN node scripts/stress_live.cjs
+NUMBERS: dev: 94/94 tests passed, measured. Production: two complete sponsor browser flows, zero page exceptions, one fresh-order worker-restart proof, measured. Migration: 1596/1596 source documents matched; writer pause to healthy production 51.939 seconds, measured. Held-out: no new recognition benchmark. Baseline: previous runtime retained stopped; no comparison score claimed.
+SCREENSHOTS: [Desktop](/Users/shreyansh/Documents/ChatGPT/Junction/valio/.work/sponsor-integrations/artifacts/e2e/sponsors-production-e648c83/1440-dashboard.png), [phone](/Users/shreyansh/Documents/ChatGPT/Junction/valio/.work/sponsor-integrations/artifacts/e2e/sponsors-production-e648c83/390-spoken-confirmation.png), [fresh order after worker restart](/Users/shreyansh/Documents/ChatGPT/Junction/valio/.work/sponsor-integrations/artifacts/e2e/persistence-production-fresh-e648c83/order-after-worker-restart.png).
+REVIEW: separate 6 Astra spec/build review passed per the coordinator; shared-account fallback and blocking provider-route findings were fixed with regressions. CRACI application-release run 43687469639 passed. The sponsor flow's loaded screenshots and width checks passed; the inherited full-screen design specification was not re-audited by this sponsor task.
+NEXT: coordinator opens the normal feature-to-main PR and handles Cloudinary's separate sponsor survey. Keep the Aiven-capable runtime after new cloud writes; reconcile orders before any SQLite downgrade. See artifacts/sponsors/RELEASE-e648c83.md.
+NEEDS DECISION: none for the application; separate Cloudinary survey remains an administrative requirement.
+BLOCKED: none for the released integrations. No prize eligibility or judging outcome is claimed.

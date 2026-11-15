@@ -2,53 +2,62 @@
 
 Turn a chef's menu into a checked purchasing plan, then approve the test order through the kitchen workspace or an authenticated agent.
 
-[Open the kitchen](https://valio.72.61.22.106.sslip.io) · [MCP endpoint](https://valio.72.61.22.106.sslip.io/mcp/) · [Evaluation notes](eval/README.md)
+[Open the kitchen](https://valio.72.61.22.106.sslip.io) · [MCP endpoint](https://valio.72.61.22.106.sslip.io/mcp/) · [Release evidence](artifacts/sponsors/RELEASE-e648c83.md) · [Evaluation notes](eval/README.md)
 
 Built by Shreyansh, team The CS Guy, for Junction 2026's Valio Trusted Trade Agents challenge.
 
 ## A kitchen workflow
 
-Start a private Hotel Aurora kitchen. Enter a menu by typing, photo or voice, choose guest counts, and review the ingredients the assistant extracted. The application subtracts stock, converts quantities into supplier packs and shows the proposed order.
+Open a private Hotel Aurora kitchen. Type a menu, upload its photo or record a request. Review the interpretation, choose guest counts and inspect the proposed order. Valio subtracts kitchen stock, converts quantities into supplier packs and checks allergens, substitutions, delivery cut-offs and spending rules.
 
-The chef can inspect allergens, substitutions, delivery cut-offs and spending rules before approval. Each visitor gets a private copy with separate orders and an MCP bearer token. Web and MCP actions apply the same checks, including cumulative weekly and monthly spending limits.
+The chef approves the exceptions before placing an order. Each visitor gets separate kitchen records and an MCP bearer token. Web and MCP actions use the same checks, including cumulative weekly and monthly spending limits.
 
-Supplier quotes and availability come from Valio's test API. Order confirmations are application records. Nothing ships, and no supplier fulfilment endpoint is connected.
+Supplier quotes and availability come from Valio's test API. Confirmations are application records. Nothing ships, and no supplier fulfilment endpoint is connected.
 
-## Current architecture
+## How the services work together
 
 ```mermaid
 flowchart LR
-    I[Typed menu, image or voice] --> G[Gemini intake]
-    G --> P[Reviewed ingredients and portions]
-    P --> R[Stock subtraction and pack arithmetic]
-    R --> Q[Shared supplier request queue and cache]
-    Q --> V[Valio test API]
-    V --> C[Allergen, substitution and budget checks]
-    C --> A[Chef approval in web or authenticated MCP]
-    A --> D[Private kitchen order store]
+    V[Recorded request] --> E[ElevenLabs Scribe v2]
+    E --> T[Editable transcript]
+    P[Menu photo] --> C[Cloudinary authenticated original and resized preview]
+    T --> G[Gemini kitchen interpretation]
+    P --> G
+    I[Typed menu] --> G
+    G --> R[Review ingredients and portions]
+    R --> K[Stock subtraction and pack arithmetic]
+    K --> Q[Shared supplier queue and cache]
+    Q --> A[Valio test API]
+    A --> B[Allergen, delivery and budget checks]
+    B --> H[Chef approval in web or authenticated MCP]
+    H --> D[Aiven PostgreSQL order ledger and immutable receipt]
+    D --> S[Explicit Listen to confirmation]
+    S --> L[ElevenLabs spoken confirmation]
 ```
 
-Gemini interprets input. Deterministic code handles quantities, pack rounding, approvals and spending rules. A shared, spaced supplier queue with retries prevents each visitor from independently hammering the supplier API. Cached supplier responses can be up to 30 minutes old and the UI identifies them.
+Gemini interprets text and images. ElevenLabs turns recorded speech into editable text before Gemini interprets it. Deterministic code handles quantities, approvals and spending limits. Recording, uploading and speaking a confirmation cannot place an order.
 
-The current Python/FastAPI service and persistent SQLite storage run on the VPS. The older Vercel URL is not the current demo. The current service does not rely on the Mac.
+The FastAPI service runs on the VPS. Aiven PostgreSQL holds private kitchens, drafts, orders and budget accounting. A versioned ledger update commits an order and its spending together; competing writers must recheck the latest ledger. Connections use certificate-verified TLS. The current service works with the Mac off.
 
-## Sponsor integrations
+A shared supplier queue spaces requests and retries temporary failures. Cached supplier responses can be up to 30 minutes old; the UI identifies their age.
 
-| Service | Current state and intended use |
-| --- | --- |
-| Valio | Implemented. Product lookup, supplier quotes and availability use the test API. Order confirmations are application records; there is no supplier fulfilment endpoint. |
-| Gemini API | Implemented. Converts menu text, image and voice input into structured kitchen intent for review. |
-| Codex | Used for implementation, debugging and verification. |
-| CRACI | **Planned, not implemented.** Run Python tests and frontend checks on CRACI CI. |
-| Cloudinary | **Planned, not implemented.** Store the chef's uploaded menu photo and deliver resized images for the intake view. |
-| ElevenLabs | **Planned, not implemented.** Transcribe Ask Valio voice input and speak concise confirmations. Existing voice input does not establish ElevenLabs use. |
-| Aiven | **Planned, not implemented.** Move private kitchen orders and budget accounting to Aiven PostgreSQL. SQLite is still the current store. |
+## Sponsor integrations in the live release
 
-These planned services have draft prize selections. They are not completed sponsor integrations.
+| Service | Actual use | Verification |
+| --- | --- | --- |
+| Valio | Product lookup, prices and availability from the challenge test API. | Deployed preparation, approvals and order-record flow. |
+| Gemini API | Converts menu text, photos and transcribed requests into kitchen intent for review. | Real deployed voice-to-menu and photo-to-menu flows. |
+| Codex | Implementation, debugging, regression tests and deployment verification. | Source, tests and release evidence in this repository. |
+| CRACI | Runs the Python regressions and JavaScript syntax check using `runs-on: craci`. | [Successful application-release CI run](https://github.com/13shreyansh/valio-menu-to-delivery/actions/runs/43687469639). |
+| Cloudinary | Stores authenticated menu originals, creates a WebP preview limited to 960 × 960, and delivers the signed preview in Ask Valio. Media receipts belong to the private kitchen. | Real upload and transformed-image decode, followed by loaded previews in both production browser flows. |
+| ElevenLabs | Scribe v2 transcribes the microphone recording. An explicit **Listen to confirmation** action uses multilingual v2 to speak the recorded order number and total. | Real transcription and returned audio in both production browser flows. |
+| Aiven | PostgreSQL stores private kitchen documents, immutable order receipts and the versioned spending ledger. | Real concurrent-write, isolation and migration probes; a newly placed production order remained readable after restarting the application worker. |
+
+Cloudinary's separate hackathon survey remains an administrative requirement. This implementation did not submit that survey. Working integrations alone do not establish prize eligibility or a judging result.
 
 ## Run locally
 
-Use Python and Node.js. Supply `VALIO_API_KEY` and `GEMINI_API_KEY` through the process environment. Keep private kitchen bearer tokens out of logs and committed files.
+Use Python and Node.js. Supply secrets through the process environment or your deployment's secret manager. Never commit credentials or private kitchen bearer tokens.
 
 ```bash
 uv venv .venv
@@ -57,38 +66,50 @@ npm ci
 .venv/bin/python -m uvicorn api.index:app --port 8077
 ```
 
-`AURORA_LOCAL_DB` selects the local SQLite file. Its default is under `/tmp`, which is unsuitable for durable production storage. The account store also supports `STORE_URL`, `STORE_KEY` and `STORE_SECRET` for a configured remote store. Do not infer that this alternative is Aiven.
+| Configuration | Purpose |
+| --- | --- |
+| `VALIO_API_KEY`, `GEMINI_API_KEY` | Supplier test API and menu interpretation. |
+| `AIVEN_DATABASE_URL` | Enables PostgreSQL storage. Use the Aiven service connection URI. |
+| `AIVEN_CA_CERT_PATH` | Path to the public CA certificate used with `sslmode=verify-full`. The certificate is public; the database URI is secret. |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Server-side authenticated menu upload and signed preview generation. |
+| `ELEVENLABS_API_KEY` | Speech-to-text and confirmation audio. |
+| `ELEVENLABS_STT_MODEL`, `ELEVENLABS_TTS_MODEL`, `ELEVENLABS_VOICE_ID` | Optional overrides. Defaults are `scribe_v2`, `eleven_multilingual_v2` and the configured stock voice. |
+| `PUBLIC_URL` | Canonical service URL used by connected assistants. |
+| `KITCHEN_SIGNING_KEY` | Stable signing identity for kitchen cookies and receipts. Preserve it across deployments. Existing installations can fall back to the supplier key. |
+| `AURORA_LOCAL_DB` | SQLite path when Aiven is unset. The default is under `/tmp` and is for development, not durable production storage. |
 
-Live supplier paths require the test credentials and reachable supplier service. A fresh visitor kitchen should start clean; do not use another visitor's token or seed repeated test orders into the public starting experience.
+Without ElevenLabs configuration, recording uses the existing Gemini transcription path; the Listen action requires ElevenLabs. Without Cloudinary, typed input remains available and the photo-storage action reports its unavailable state. Production has all three providers configured. Provider failures report an error without placing an order or changing the spending ledger.
 
-## Validation
+For an existing SQLite installation, `scripts/migrate_aiven.py --apply` imports and verifies documents using a prior-import receipt. A source delta can advance a cloud row only if its version and body still match that receipt. Pause the old writer for the final catch-up. After Aiven accepts new orders, do not switch back to a SQLite-only runtime without reconciling those writes.
+
+## Verification
 
 ```bash
 .venv/bin/python -m pytest -q
 npm run check
 ```
 
-`npm run e2e` runs browser flow/request checks. Tests that write must use isolated test kitchens and clean up their own data. Do not run shared-account order scripts during recording.
+The sponsor acceptance uses a deployed URL and separate private visitor kitchens at 1440 × 900 and 390 × 844. Supply a local WAV fixture containing a wedding request; credentials stay on the server.
 
-The owner recorded 80/80 unit checks and a stress run with 220 UI steps, 60 Ask requests and 10 browser sessions without failed steps, stale offers, nut leaks or duplicate order numbers. Recorded Ask latency was p50 5.6 seconds and p95 10.3 seconds. These are measured results for that run, not a new independent rerun or a judge score. The current handoff identifies live build `70daa59`.
-
-Pack rounding can still disagree with the supplier's accounting. Test orders never establish real delivery. Inspect the displayed supplier cache age and cut-off before approving a plan.
-
-## Planned architecture and acceptance
-
-```mermaid
-flowchart LR
-    P[Menu photo] -. planned .-> C[Cloudinary originals and resized delivery]
-    V[Chef voice] -. planned .-> E[ElevenLabs transcription]
-    E -. reviewed intent .-> A[Existing Ask Valio checks]
-    A -. planned spoken confirmation .-> E
-    A -. planned durable orders .-> D[Aiven PostgreSQL]
+```bash
+BASE_URL=https://your-deployed-host \
+EXPECTED_COMMIT=your-full-application-commit \
+AUDIO_FIXTURE=/absolute/path/to/wedding-request.wav \
+OUT=artifacts/e2e/sponsors \
+node scripts/sponsor-e2e.cjs
 ```
 
-Implementation remains pending approval. Cloudinary completion needs an actual upload and transformed delivery URL, plus the sponsor's separate hackathon survey. ElevenLabs needs a real voice round trip while leaving final order approval explicit. Aiven needs durable order reads after restart, transactional budget enforcement and visitor isolation. CRACI needs a successful CI run using `runs-on: craci`.
+The test records audio, checks the ElevenLabs transcript, updates the menu, uploads a photo, waits for its Cloudinary preview, approves the checks, places an application order and plays its spoken confirmation. It then reloads the saved order. `npm run e2e` runs the existing kitchen and request regression flows. Writing tests must use private test kitchens; do not seed repeated orders into the public template.
 
-Do not mark any addition implemented until these checks pass. Photo retention and deletion must follow the kitchen's privacy requirements; order tokens and private menus do not belong in public evidence.
+The production application release is `e648c83cf8f057df9467c4f7cde12f3771c906a6`. Measured results for this release are 94/94 unit tests, two complete production sponsor browser flows with zero page exceptions, and a fresh order read after an actual worker restart. The final SQLite catch-up matched 1596/1596 documents. See [the release record](artifacts/sponsors/RELEASE-e648c83.md) for the scope and evidence.
+
+Pack rounding can still disagree with the supplier's accounting. These tests establish the implemented workflow, not recognition accuracy on a held-out speech or photo dataset. Photo retention and deletion still require a production privacy policy. Signed photo URLs grant access to their holder; keep them and private menus out of public evidence.
 
 ## Repository guide
 
-`api/index.py` starts the web service. `chefagent/` contains kitchen logic, supplier access and the account store. `tests/` holds regression checks; `scripts/` contains browser checks. Read [DECISIONS.md](DECISIONS.md) for design trade-offs and [eval/README.md](eval/README.md) for evaluation context.
+- `api/index.py` starts the service and closes database workers on shutdown.
+- `chefagent/portal.py` contains kitchen rules and order commitment; web and MCP share it.
+- `chefagent/aiven_store.py` implements PostgreSQL storage and safe migration receipts.
+- `chefagent/sponsor_media.py` handles Cloudinary and ElevenLabs.
+- `tests/` contains regression checks; `scripts/` contains deployed browser and provider checks.
+- [DECISIONS.md](DECISIONS.md) records design choices; [eval/README.md](eval/README.md) describes earlier evaluation work.
