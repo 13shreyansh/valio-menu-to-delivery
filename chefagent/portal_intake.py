@@ -285,7 +285,7 @@ def judge(needs, calls):
         lines.append(f"Need {i}: {n['label']} ({n['purpose']})")
         for p in n["candidates"]:
             lines.append(f"  {p['id']}: {p['name']} | {p['name_fi']} | {p['pack']:g} {p['pack_dim']}")
-    raw, call = gemini(JUDGE, "\n".join(lines), "Product matching", timeout=60)
+    raw, call = gemini(JUDGE, "\n".join(lines), "Product matching", timeout=25)
     call["request"] = {"needs": [n["label"] for n in needs], "candidates": sum(len(n["candidates"]) for n in needs)}
     calls.append(call)
     matches = raw.get("matches") if isinstance(raw, dict) else {}
@@ -315,9 +315,8 @@ def quote_options(product, date, policy, api, calls):
             unit, policy, flags=product, k=36,
         )
         accepted = []
-        for attempt in range(2):
-            if cands and not accepted:
-                accepted = judge([{"label": product["name"], "purpose": "direct order", "candidates": cands}], calls)[0]
+        if cands:
+            accepted = judge([{"label": product["name"], "purpose": "direct order", "candidates": cands}], calls)[0]
     cands = [p for p in cands if p["id"] in accepted]
     ids = [p["id"] for p in cands]
     prices = api.price(delivery, ids) if ids else {}
@@ -453,7 +452,9 @@ def plan_recipes(reading, rule, calls):
         key = "assumed-" + re.sub(r"[^a-z0-9]+", "-", dish["name"].lower()).strip("-")[:30] + f"-{n}"
         ingredients = {}
         for ing in dish["ingredients"]:
-            if ing["role"] and not dish["diet"]:
+            standard = load().get((f.INGREDIENTS.get(ing["role"]) or {}).get("ids", [None])[0]) if ing["role"] else None
+            if ing["role"] and (not dish["diet"] or (standard and not product_violations(standard, diet=dish["diet"], policy=policy))):
+                # The kitchen's own potatoes are vegan too: one row per product, not one per diet.
                 ingredients[ing["role"]] = ingredients.get(ing["role"], 0) + ing["amount"]
                 continue
             role = "x-" + re.sub(r"[^a-z0-9]+", "-", ing["name"].lower()).strip("-")[:24] + ("-" + dish["diet"][0] if dish["diet"] else "")

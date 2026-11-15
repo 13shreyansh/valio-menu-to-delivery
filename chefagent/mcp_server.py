@@ -12,6 +12,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from . import portal
 from .kitchen import KitchenError, TZ, cutoff_passed
 from .portal_intake import WEEK, nice_day
+from .catalog import load
 
 
 def checked(fn, *args, **kwargs):
@@ -172,8 +173,11 @@ def need(query, quantity, unit, product_id=None, lactose_free=False, gluten_free
     if not isinstance(quantity, (int, float)) or not 0 < quantity <= 100000:
         raise KitchenError("quantity must be above 0 and at most 100,000.")
     q = str(query or "")
+    if product_id and not load().get(str(product_id)):
+        raise KitchenError(f"Product {product_id} is not in Valio's catalogue. Use find_products to get a product id.")
+    named = (load().get(str(product_id)) or {}) if product_id else {}
     return {
-        "name": q[:60] or "product " + str(product_id), "search_fi": q[:60], "search_en": q[:60], "quantity": float(quantity), "unit": unit,
+        "name": q[:60] or named.get("name_fi") or named.get("name") or "product " + str(product_id), "search_fi": q[:60], "search_en": q[:60], "quantity": float(quantity), "unit": unit,
         "lactose_free": lactose_free or "lactose" in q.lower() or "laktoositon" in q.lower(), "gluten_free": gluten_free, "vegan": vegan, "organic": organic,
         "product_id": str(product_id) if product_id else None,
     }
@@ -248,7 +252,7 @@ def order_products(items: list[Item], deliver_by: str = "Monday", place_if_allow
         elif not o.get("can_place"):
             portal.log_event(
                 "Aurora Group assistant prepared an order that needs your OK",
-                note="Not placed: " + "; ".join(portal.check_label(c) for c in o["checks"] if not c["approved"])[:200],
+                note=portal.shorten("Not placed: " + "; ".join(portal.check_label(c) for c in o["checks"] if not c["approved"]), 240),
                 by="Aurora Group assistant", total=o["total"], link="/orders/draft-" + o["draft_id"],
             )
     except KitchenError as exc:
@@ -266,7 +270,7 @@ def prepare_order(request: str) -> Order:
         checked(
             portal.log_event,
             "Aurora Group assistant prepared an order that needs your OK",
-            note="Not placed: " + "; ".join(portal.check_label(c) for c in o["checks"] if not c["approved"])[:200],
+            note=portal.shorten("Not placed: " + "; ".join(portal.check_label(c) for c in o["checks"] if not c["approved"]), 240),
             by="Aurora Group assistant", total=o["total"], link="/orders/draft-" + o["draft_id"],
         )
     return order_view(o)

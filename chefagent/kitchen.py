@@ -50,14 +50,28 @@ def initial_state():
 
 def services_for(state, context=None):
     services = copy.deepcopy(state.get("services_override", context.BASE_SERVICES if context else BASE_SERVICES))
+    if context and "services_override" in state:
+        services += copy.deepcopy([s for s in context.BASE_SERVICES if s.get('placed_event')])
     events = state.get('menu_events')
     if events is None: events = [state['wedding']] if state.get('wedding') else []
     for event in events:
         for dish in event['dishes']:
-            services.append({'date': event['date'], 'recipe': dish['recipe'], 'covers': dish['covers'], 'wedding': True, 'event_id':event.get('id')})
+            services.append({'date': event['date'], 'recipe': dish['recipe'], 'covers': dish['covers'], 'wedding': True, 'event_id':event.get('id'), 'event':event.get('event')})
     return services
 
 def delivery_for(date): return max(d for d in DELIVERIES if d <= date)
+
+def change_reason(state, parts=None):
+    """Why a row changed, named after the event(s) that changed it: "for the wedding on Saturday 21 Nov"."""
+    events = state.get('menu_events')
+    if events is None: events = [state['wedding']] if state.get('wedding') else []
+    if parts:
+        seen = {(x.get('event'), x.get('date')) for x in parts if x.get('wedding')}
+        events = [e for e in events if (e.get('event'), e.get('date')) in seen] or events
+    if not events: return 'for your latest change'
+    if events[-1].get('from_photo') and len(events) == 1: return 'for the new menu from your photo'
+    named = list(dict.fromkeys(f"{(e.get('event') or 'event').lower()} on {nice_day(e['date'])}" for e in events[-2:]))
+    return 'for the ' + ' and '.join(named)
 
 def round_units(amount, pack):
     if amount <= 0: return 0
@@ -97,7 +111,7 @@ def build(state, fresh=False, context=None, progress=None):
             allocations[(delivery_for(s['date']), role)].append({
                 'dish': recipe['name'], 'recipe': s['recipe'], 'assumed': bool(recipe.get('assumed')), 'date': s['date'], 'covers': s['covers'],
                 'per_cover': grams, 'amount': round(s['covers']*grams/1000, 6),
-                'wedding': s.get('wedding', False)})
+                'wedding': s.get('wedding', False), 'event': s.get('event'), 'placed_event': s.get('placed_event', False)})
     if progress: progress('scaled', {'covers':sum(x['covers'] for x in (state.get('wedding') or {}).get('dishes',[]))})
     quoted={}
     for day in DELIVERIES:
@@ -180,9 +194,9 @@ def build(state, fresh=False, context=None, progress=None):
                    'contains':p['contains'],'may_contain':p['may_contain'],'allocations':parts,
                    'change':None,'reason':'Menu × booked covers, less usable stock, rounded up to sales units.',
                    'assumed':any(x.get('assumed') for x in parts),'edited':rid in state['overrides']}
-            if state.get('wedding') and any(x.get('wedding') for x in parts):
+            if any(x.get('wedding') for x in parts):
                 row['change'] = 'More' if any(not x.get('wedding') for x in parts) else 'Added'
-                row['change_reason'] = 'for the new wedding menu' if state['wedding'].get('from_photo') else 'for Saturday wedding'
+                row['change_reason'] = change_reason(state, parts)
             if role == 'fish' and p['id'] != INGREDIENTS['fish']['ids'][0]:
                 row['change']='Swapped'
                 original = cat.get(INGREDIENTS['fish']['ids'][0])
@@ -246,12 +260,12 @@ def build(state, fresh=False, context=None, progress=None):
         old=previous.get(row['id'])
         if not old:
             if row.get('change') != 'Swapped' and previous:
-                row['change']='Added';row['change_reason']='for the new wedding menu' if (state.get('wedding') or {}).get('from_photo') else 'for Saturday wedding'
+                row['change']='Added';row['change_reason']=change_reason(state, row.get('allocations'))
         elif row['product_id'] != old['product_id']:
             row['change']='Swapped';row['change_reason']='was '+old['name']
         elif row['units'] != old['units']:
             row['change']='More' if row['units']>old['units'] else 'Less'
-            row['change_reason']='for the new wedding menu' if (state.get('wedding') or {}).get('from_photo') else 'for Saturday wedding'
+            row['change_reason']=change_reason(state, row.get('allocations'))
         elif previous:
             row['change']=None
     for rid,old in previous.items():

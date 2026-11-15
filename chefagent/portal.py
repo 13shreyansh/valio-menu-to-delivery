@@ -108,7 +108,27 @@ def spend(book, skip=None):
     return week, month
 
 
-def context(rule, state=None, pool=None):
+HUGE = {"l": 5000, "kg": 2000, "pcs": 5000}  # one request line above this needs a person to check the amount
+
+
+def placed_key(draft_id, recipe, state):
+    """Assumed recipes get a per-order key so two orders' "beef stew" never collide."""
+    return recipe if recipe not in (state.get("custom_recipes") or {}) else draft_id[:8] + "-" + recipe
+
+
+def placed_events(others):
+    """Events (weddings, lunches...) on already placed orders. Their purchases are in the stock pool,
+    so their demand must be too, or a new event would eat the stock bought for an old one."""
+    services, recipes, ingredients = [], {}, {}
+    for o in others:
+        for sv in o.get("event_services") or []:
+            services.append({**sv, "wedding": False, "placed_event": True})
+        recipes.update(o.get("event_recipes") or {})
+        ingredients.update(o.get("event_ingredients") or {})
+    return services, recipes, ingredients
+
+
+def context(rule, state=None, pool=None, placed=None):
     data = {
         name: copy.deepcopy(getattr(f, name))
         for name in [
@@ -124,6 +144,13 @@ def context(rule, state=None, pool=None):
         if role in data["INGREDIENTS"]:
             data["INGREDIENTS"][role]["label"] = label
     state = state or {}
+    if placed:
+        services, recipes, ingredients = placed
+        data["BASE_SERVICES"] = data["BASE_SERVICES"] + copy.deepcopy(services)
+        data["RECIPES"].update(copy.deepcopy(recipes))
+        for role, item in ingredients.items():
+            data["INGREDIENTS"].setdefault(role, copy.deepcopy(item))
+            data["STOCK"].setdefault(role, 0)
     data["RECIPES"].update(copy.deepcopy(state.get("custom_recipes") or {}))
     for role, item in (state.get("custom_ingredients") or {}).items():
         data["INGREDIENTS"][role] = copy.deepcopy(item)
@@ -148,11 +175,12 @@ def build(state, fresh=False, progress=None, book=None, rule=None):
     for o in others:
         for role, amount in (o.get("bought") or {}).items():
             pool[role] = pool.get(role, 0) + amount
-    ctx = context(rule, state, pool)
+    placed = placed_events(others)
+    ctx = context(rule, state, pool, placed)
     if state.get("increment"):
         # An outside assistant orders on top of the kitchen's standing week, so
         # both channels see the same stock position for the same request.
-        plan = k.build({**k.initial_state(), "budget": 1e12}, context=context(rule, None, pool))
+        plan = k.build({**k.initial_state(), "budget": 1e12}, context=context(rule, None, pool, placed))
         for r in plan["rows"]:
             if r["role"] != "extra":
                 ctx.STOCK[r["role"]] = round(ctx.STOCK.get(r["role"], 0) + r["ordered"], 6)
@@ -237,20 +265,47 @@ def build(state, fresh=False, progress=None, book=None, rule=None):
                 }
             )
     cat = load()
+    if rule["allergens"]:
+        unknown = [r for r in out["rows"] if r["units"] > 0 and (cat.get(r["product_id"]) or {}).get("undeclared")]
+        if unknown:
+            checks.append(
+                {
+                    "id": "undeclared-" + "-".join(sorted(r["id"] for r in unknown))[:60],
+                    "kind": "allergen",
+                    "title": "No allergen information from the supplier",
+                    "text": f"{', '.join(r['name'] for r in unknown[:4])} {'come' if len(unknown) > 1 else 'comes'} with no allergen declaration, and your kitchen rule is no {' or '.join(rule['allergens'])}. Check the label before serving, then approve.",
+                    "row_ids": [r["id"] for r in unknown],
+                    "can_approve": True,
+                }
+            )
     for need in state.get("dietary") or []:
         a, word = need["allergen"], ALLERGEN_WORDS.get(need["allergen"], need["allergen"])
         if a in rule["allergens"]:
-            notes.append(f"{need['label'].capitalize()}: your kitchen rule already excludes {a}, including may-contain. All {sum(r['units'] > 0 for r in out['rows'])} products on this order were checked.")
+            notes.append(f"{need['label'].capitalize()}: your kitchen rule already excludes {a}, including may-contain. All {sum(r['units'] > 0 for r in out['rows'])} products on this order were checked by their allergen declarations and names" + (", and the ones with no declaration need your OK." if any(c["id"].startswith("undeclared-") for c in checks) else "."))
             continue
+        def has(prod):
+            return ("milk" in prod.get("contains", []) and not prod.get("lactose_free")) if a == "lactose" else a in prod.get("contains", [])
         hit = []
         for r in out["rows"]:
             p = cat.get(r["product_id"]) or {}
-            has = ("milk" in r["contains"] and not p.get("lactose_free")) if a == "lactose" else a in r["contains"]
-            if r["units"] > 0 and has and any(x.get("date") == need.get("date") and x.get("wedding") for x in r["allocations"]):
+            if r["units"] > 0 and has({**p, "contains": r["contains"]}) and any(x.get("date") == need.get("date") and x.get("wedding") for x in r["allocations"]):
                 hit.append(r)
         dishes = sorted({x["dish"] for r in hit for x in r["allocations"] if x.get("date") == need.get("date") and x.get("wedding")})
+        # Ingredients the kitchen already has in stock are not on the order, but the guests still eat them.
+        ordered_roles = {r["role"] for r in hit}
+        for ev in state.get("menu_events") or []:
+            if ev.get("date") != need.get("date") or (need.get("event_id") and ev.get("id") != need.get("event_id")):
+                continue
+            for dish in ev["dishes"]:
+                for role in (ctx.RECIPES.get(dish.get("recipe")) or {}).get("ingredients", {}):
+                    ids = (ctx.INGREDIENTS.get(role) or {}).get("ids") or []
+                    prod = cat.get(ids[0]) if ids else None
+                    if prod and role not in ordered_roles and has(prod):
+                        ordered_roles.add(role)
+                        hit.append({"id": None, "name": f"{ROLE_LABELS.get(role, role)} from your stock", "role": role})
+                        dishes = sorted(set(dishes) | {dish.get("name") or ctx.RECIPES[dish["recipe"]]["name"]})
         if not hit:
-            notes.append(f"{need['label'].capitalize()}: no product for this meal contains {word}.")
+            notes.append(f"{need['label'].capitalize()}: no product for this meal contains {word}, including what comes from your stock.")
             continue
         who = f"{need['guests']} portions" if need.get("guests") else "their portions"
         checks.append(
@@ -259,7 +314,7 @@ def build(state, fresh=False, progress=None, book=None, rule=None):
                 "kind": "diet",
                 "title": need["label"].capitalize(),
                 "text": f"{', '.join(dishes)} {'use' if len(dishes) > 1 else 'uses'} {', '.join(r['name'] for r in hit[:4])}, which contain {word}. Plate {who} without them, or tell Valio a separate dish for these guests.",
-                "row_ids": [r["id"] for r in hit],
+                "row_ids": [r["id"] for r in hit if r["id"]],
                 "can_approve": True,
             }
         )
@@ -452,8 +507,14 @@ def get_draft(draft_id):
     return build(state, book=book)
 
 
+def shorten(text, n):
+    """Cut at a word boundary, never mid-word."""
+    text = str(text or "")
+    return text if len(text) <= n else text[: n - 1].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
+
+
 def check_label(c):
-    return c.get("title") or {"swap": "Product swap", "pack": "Larger pack"}.get(c["kind"]) or c["text"][:80]
+    return c.get("title") or {"swap": "Product swap", "pack": "Larger pack"}.get(c["kind"]) or shorten(c["text"].split(". ")[0], 90)
 
 
 def change(draft_id, action, value=None, by="Sanna Virtanen"):
@@ -679,11 +740,17 @@ def apply_request(
             when = nice_day(need["date"])
             if not line["chosen"]:
                 closest = "; ".join(f"{o['name']}: {o.get('note', 'not available')}" for o in line["options"][:3])
-                state["line_checks"].append({"id": f"line-none-{n}", "kind": "gap", "title": f"No {need['name'].lower()} can arrive by {when}", "text": (f"Valio checked {line['compared']} matching products. Closest: {closest}. Ask for a later day or another product." if line["options"] else f"Valio found no product matching “{need['name']}” that fits your kitchen rules. Try other words, or search the catalogue."), "row_ids": [], "can_approve": False})
+                title = f"No {need['name'].lower()} can arrive by {when}" if line["options"] else f"“{need['name']}” is not in Valio's catalogue"
+                state["line_checks"].append({"id": f"line-none-{n}", "kind": "gap", "title": title, "text": (f"Valio checked {line['compared']} matching products. Closest: {closest}. Ask for a later day or another product." if line["options"] else f"Valio found no product matching “{need['name']}” that fits your kitchen rules. Try other words, or search the catalogue."), "row_ids": [], "can_approve": False})
             elif line["short"] > 0:
                 state["line_checks"].append({"id": f"line-short-{n}", "kind": "partial", "title": f"Only part of the {need['name'].lower()} can arrive by {when}", "text": f"You asked for {asked}. Valio has {need['quantity'] - line['short']:,.0f} {unit} that can arrive in time; {line['short']:,.0f} {unit} are short. Approve the part delivery, or ask for a later day.", "row_ids": ids, "can_approve": True})
             elif line["split"]:
                 state["line_checks"].append({"id": f"line-split-{n}", "kind": "partial", "title": f"{need['name'].capitalize()} split across {len(ids)} products", "text": f"No single product has {asked} in stock for {when}, so Valio filled it from the cheapest products first.", "row_ids": ids, "can_approve": True})
+            if line["chosen"] and (need["quantity"] >= HUGE[need["unit"]] or sum(
+                    p["units"] * next(o for o in line["options"] if o["product_id"] == p["product_id"])["unit_price"] for p in line["chosen"]) >= 5000):
+                state["line_checks"].append({"id": f"line-huge-{n}", "kind": "quantity", "title": f"Check the amount: {asked}",
+                    "text": f"{asked.capitalize()} is far more than {f.KITCHEN.get('name', 'your kitchen')} usually orders at once. Check the amount before you approve, so a typing slip doesn't become a delivery.",
+                    "row_ids": ids, "can_approve": True})
     if state.get("menu_events") is not None:
         state["wedding"] = state["menu_events"][-1] if state["menu_events"] else None
     state["overrides"] = {key: v for key, v in state["overrides"].items() if key.startswith("extra-")}
@@ -828,6 +895,13 @@ def place(draft_id, assistant=False):
         "products": sum(r["units"] > 0 for r in out["rows"]),
         "product_ids": [r["product_id"] for r in out["rows"] if r["units"] > 0],
         "bought": bought,
+        # What this order's events will use, so later orders don't count that stock as free.
+        "event_services": [
+            {**{key: sv[key] for key in ("date", "recipe", "covers") if key in sv}, "recipe": placed_key(draft_id, sv["recipe"], state)}
+            for sv in k.services_for(state) if sv.get("wedding")
+        ],
+        "event_recipes": {placed_key(draft_id, key, state): r for key, r in (state.get("custom_recipes") or {}).items()},
+        "event_ingredients": copy.deepcopy(state.get("custom_ingredients") or {}),
         "request": state.get("request", ""),
         "deliveries": [
             {
@@ -890,7 +964,7 @@ def token_account(token):
         acct = base64.urlsafe_b64decode(m.group(1) + "=" * (-len(m.group(1)) % 4)).decode()
     except (ValueError, UnicodeDecodeError):
         return None
-    return acct if acct == "aurora" or re.fullmatch(r"test-[a-f0-9]{32}", acct) else None
+    return acct if acct == "aurora" or re.fullmatch(r"(?:test|demo)-[a-f0-9]{32}", acct) else None
 
 
 def token_valid(token):

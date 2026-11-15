@@ -1,4 +1,4 @@
-import base64, json, queue, threading, time
+import base64, json, queue, threading, time, uuid
 from contextvars import copy_context
 from .account_scope import account_id,account_name
 from fastapi import APIRouter, Request, Depends
@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from . import portal as p, kitchen as k
 from .kitchen_intake import understand
 from .valio_api import ValioBusy
+from .account_store import clone_account, SEED
 
 router = APIRouter(prefix="/api")
 
@@ -28,10 +29,16 @@ def signed_in(req: Request):
 
 @router.post("/login")
 def login():
+    acct = account_id()
+    if acct == "aurora":
+        # A private, fresh copy of Hotel Aurora for this visitor: nobody sees anyone else's orders.
+        private = "demo-" + uuid.uuid4().hex
+        if clone_account(SEED, "accounts/" + private) or clone_account("accounts/aurora-v3", "accounts/" + private):
+            acct = private
     r = JSONResponse({"account": account_name()})
     r.set_cookie(
         "aurora_account",
-        k.seal({"created": time.time(), "account": account_name(),"account_id":account_id()}),
+        k.seal({"created": time.time(), "account": account_name(),"account_id":acct}),
         httponly=True,
         secure=True,
         samesite="lax",

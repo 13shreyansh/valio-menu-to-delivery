@@ -133,3 +133,16 @@ def test_cached_valio_receipt_keeps_real_response_and_origin_time(monkeypatch,tm
     assert call['response']['products']==[row]
     assert call['origin_checked_at']=={'P':checked}
     assert call['at']>=checked and 'Valio API' in call['source']
+
+
+def test_nut_named_products_count_as_nuts_even_without_declaration():
+    from chefagent.catalog import enrich
+    from chefagent.guardrails import product_violations
+    almonds = enrich({"name": "RB 500G MANTELILASTU", "name_fi": "RB 500G MANTELILASTU", "contains": [], "may_contain": [], "category": "21460"})
+    assert "nuts" in almonds["contains"] and product_violations(almonds, policy={"free_from": ["nuts"]})
+    peanut = enrich({"name": "PCD 500G MAAPÄHKINÄVOI", "name_fi": "", "contains": [], "may_contain": [], "category": "21453"})
+    assert "peanuts" in peanut["contains"]
+    nutmeg = enrich({"name": "Santa Maria Muskottipähkinä jauhettu", "name_fi": "", "contains": [], "may_contain": [], "category": "22630"})
+    assert nutmeg["contains"] == [] and not nutmeg["undeclared"]
+    raisins = enrich({"name": "Rusina", "name_fi": "Rusina", "contains": [], "may_contain": [], "category": "21460"})
+    assert raisins["undeclared"]

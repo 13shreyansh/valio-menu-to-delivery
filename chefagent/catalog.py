@@ -18,9 +18,37 @@ def tokens(s: str):
     return TOKEN.findall(norm(s))
 
 
+# Many suppliers leave the GS1 allergen field empty (e.g. "RB 1KG HASSELPÄHKINÄ" declares nothing).
+# A product whose own name says it is an allergen is treated as containing it, whatever the field says.
+NAME_ALLERGENS = {
+    "nuts": re.compile(r"manteli|hasselp|cashew|pistaasi|pekaani|saksanpähk|parapähk|macadamia|makadamia|marsipaani|praliini|"
+                       r"nougat|almond|hazelnut|walnut|pecan|pistachio|marzipan|praline|brazil nut|\btree ?nut"),
+    "peanuts": re.compile(r"maapähk|suolapähk|peanut"),
+    "sesame": re.compile(r"seesam|sesam|tahini|tahna"),
+}
+NOT_ALLERGEN = re.compile(r"muskottipähk|nutmeg|kookos|coconut")
+# Products in these categories with no allergen declaration at all need a person to check the label
+# when the kitchen bans allergens: nuts and seeds, spreads, chocolate, pastry, syrups.
+RISKY_UNDECLARED = ("21460", "21453", "52201", "41763", "41764", "22140", "21992", "21150")
+
+
+def enrich(p):
+    text = (p["name"] + " " + p["name_fi"]).lower()
+    declared = bool(p["contains"] or p["may_contain"])
+    named = set() if NOT_ALLERGEN.search(text) and not re.search(r"manteli|hassel|cashew|maapähk|almond|hazel|peanut", text) else \
+        {a for a, rx in NAME_ALLERGENS.items() if rx.search(text)}
+    if "sesame" in named and "tahna" in text and not re.search(r"seesam|sesam|tahini", text):
+        named.discard("sesame")  # "tahna" is any paste; only sesame paste counts
+    if named - set(p["contains"]):
+        p["contains"] = sorted(set(p["contains"]) | named)
+        p["contains_from_name"] = sorted(named)
+    p["undeclared"] = not declared and not named and p.get("category", "") in RISKY_UNDECLARED
+    return p
+
+
 class Catalog:
     def __init__(self, path=ROOT / "data" / "catalog.json"):
-        self.items = json.loads(Path(path).read_text())
+        self.items = [enrich(p) for p in json.loads(Path(path).read_text())]
         self.by_id = {p["id"]: p for p in self.items}
         self.food = [p for p in self.items if p["food"]]
         docs = []

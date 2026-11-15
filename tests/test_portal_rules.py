@@ -9,7 +9,7 @@ def account(monkeypatch, tmp_path):
     monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
     monkeypatch.setenv("AURORA_LOCAL_DB", str(tmp_path / "account.sqlite"))
 
-    def ctx(rule, state=None, pool=None):
+    def ctx(rule, state=None, pool=None, placed=None):
         attrs = {
             n: copy.deepcopy(getattr(old, n))
             for n in [
@@ -23,6 +23,9 @@ def account(monkeypatch, tmp_path):
         }
         for role, amount in (pool or {}).items():
             attrs["STOCK"][role] = attrs["STOCK"].get(role, 0) + amount
+        if placed:
+            attrs["BASE_SERVICES"] = attrs["BASE_SERVICES"] + copy.deepcopy(placed[0])
+            attrs["RECIPES"].update(copy.deepcopy(placed[1]))
         attrs["KITCHEN"]["policy"] = {
             "free_from": rule["allergens"],
             "strict_may_contain": True,

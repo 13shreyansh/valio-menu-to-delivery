@@ -154,3 +154,42 @@ class Store:
                 (key, json.dumps(value), n),
             )
             return str(n)
+
+
+SEED = "accounts/aurora-seed"
+
+
+def clone_account(src, dst):
+    """Copy one account's documents into a new namespace: the recorded orders, drafts they refer to,
+    rules and history. The connected-assistant token is never copied; the copy makes its own.
+    Returns False where storage cannot copy (Blob or Postgres), and the caller keeps the shared kitchen."""
+    s = Store(src)
+    if s.pg or s.token:
+        return False
+    with sqlite3.connect(s.local) as db:
+        db.execute("CREATE TABLE IF NOT EXISTS docs (key TEXT PRIMARY KEY, body TEXT, version INTEGER)")
+        row = db.execute("SELECT body FROM docs WHERE key=?", (src + "/ledger",)).fetchone()
+        if not row:
+            return False
+        book = json.loads(row[0])
+        book.pop("archive", None)
+        keep = {o.get("draft_id") for o in book.get("orders", [])}
+        keep |= {d.get("draft_id") or d.get("id") for d in book.get("drafts", []) if isinstance(d, dict)}
+        keep |= {d for d in book.get("drafts", []) if isinstance(d, str)}
+        db.execute("BEGIN IMMEDIATE")
+        for key, body in db.execute("SELECT key, body FROM docs WHERE key LIKE ?", (src + "/%",)).fetchall():
+            name = key[len(src) + 1:]
+            if name == "mcp" or (name.startswith("drafts/") and name[7:] not in keep):
+                continue
+            if name == "ledger":
+                body = json.dumps(book)
+            db.execute("INSERT OR REPLACE INTO docs VALUES (?,?,1)", (dst + "/" + name, body))
+    return True
+
+
+def save_seed(src="accounts/aurora-v3"):
+    """Freeze the freshly reset public kitchen as the template for private demo copies."""
+    s = Store(src)
+    with sqlite3.connect(s.local) as db:
+        db.execute("DELETE FROM docs WHERE key LIKE ?", (SEED + "/%",))
+    return clone_account(src, SEED)

@@ -105,3 +105,22 @@ def test_mcp_tools_use_request_kitchen_not_global_account(monkeypatch,tmp_path,l
     headers['Authorization']='Bearer '+aurora_token
     c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'prepare_order','arguments':{'request':'breakfast'}}})
     assert seen[-1]=='aurora'
+
+
+def test_private_demo_copy_is_isolated_and_has_no_token(tmp_path, monkeypatch):
+    import json, sqlite3
+    from chefagent import account_store as s
+    monkeypatch.setenv("AURORA_LOCAL_DB", str(tmp_path / "a.sqlite"))
+    for var in ("STORE_URL", "BLOB_READ_WRITE_TOKEN"): monkeypatch.delenv(var, raising=False)
+    src = s.Store("accounts/aurora-v3")
+    src.put("ledger", {"orders": [{"draft_id": "a"}], "drafts": [{"draft_id": "b", "status": "Draft"}], "events": [], "archive": [{"big": 1}]})
+    for d in "abc": src.put("drafts/" + d, {"id": d})
+    src.put("mcp", {"token": "secret"}); src.put("rules", {"weekly_limit": 1})
+    assert s.save_seed()
+    assert s.clone_account(s.SEED, "accounts/demo-" + "0" * 32)
+    dst = s.Store("accounts/demo-" + "0" * 32)
+    assert dst.get("mcp") == (None, None)
+    assert dst.get("drafts/c") == (None, None) and dst.get("drafts/a")[0] == {"id": "a"}
+    assert "archive" not in dst.get("ledger")[0]
+    dst.put("rules", {"weekly_limit": 2}, dst.get("rules")[1])
+    assert src.get("rules")[0] == {"weekly_limit": 1}

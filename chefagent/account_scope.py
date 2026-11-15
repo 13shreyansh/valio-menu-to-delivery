@@ -5,6 +5,8 @@ import re
 
 CURRENT_ACCOUNT = ContextVar('valio_account', default='aurora')
 TEST_RUN = re.compile(r'^[a-f0-9]{32}$')
+# Every "Try the demo account" visit gets its own private copy of Hotel Aurora (demo-...).
+PRIVATE = re.compile(r'(?:test|repair|demo)-[a-f0-9]{32}')
 
 
 def account_id():
@@ -12,7 +14,7 @@ def account_id():
 
 
 def account_name():
-    return 'Hotel Aurora' if account_id() == 'aurora' else 'Aurora Test Kitchen'
+    return 'Aurora Test Kitchen' if account_id().startswith(('test-', 'repair-')) else 'Hotel Aurora'
 
 
 def storage_namespace():
@@ -21,7 +23,7 @@ def storage_namespace():
 
 @contextmanager
 def kitchen_scope(value):
-    if value != 'aurora' and not re.fullmatch(r'(?:test|repair)-[a-f0-9]{32}', value):
+    if value != 'aurora' and not PRIVATE.fullmatch(value):
         raise ValueError('Invalid kitchen scope')
     token = CURRENT_ACCOUNT.set(value)
     try:
@@ -73,7 +75,7 @@ class KitchenScopeMiddleware:
             try:
                 cookie = unseal(req.cookies.get('aurora_account', ''))
                 candidate = cookie.get('account_id', 'aurora')
-                if candidate == 'aurora' or re.fullmatch(r'test-[a-f0-9]{32}', candidate):
+                if candidate == 'aurora' or re.fullmatch(r'(?:test|demo)-[a-f0-9]{32}', candidate):
                     identity = candidate
             except (KitchenError, ValueError):
                 pass

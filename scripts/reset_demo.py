@@ -8,7 +8,7 @@ import copy, json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from chefagent import portal as p
-from chefagent.account_store import Store
+from chefagent.account_store import Store, save_seed
 from chefagent.account_scope import kitchen_scope
 from scripts.repair_aurora import delivered_copy
 
@@ -53,7 +53,8 @@ def reset():
         return {"history": [(o["order_number"], o["total"]) for o in keep], "archived_orders": len(book["archive"][-1]["orders"]), "archived_drafts": len(book["archive"][-1]["drafts"])}
     out = p.update_ledger(clean)
     p.new_draft()  # next week's order is prepared and waiting
-    return {**out, "built": made, "rules": {k: fresh[k] for k in ["weekly_limit", "monthly_limit", "growth_limit", "over_limit", "allergens"]}, "token_ready": bool(p.mcp_token())}
+    seeded = save_seed()  # every "Try the demo account" visit starts from this clean copy
+    return {**out, "seeded_private_copies": seeded, "built": made, "rules": {k: fresh[k] for k in ["weekly_limit", "monthly_limit", "growth_limit", "over_limit", "allergens"]}, "token_ready": bool(p.mcp_token())}
 
 
 if __name__ == "__main__":

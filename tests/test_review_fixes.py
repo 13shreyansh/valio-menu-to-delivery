@@ -89,3 +89,25 @@ def test_token_names_its_account_and_must_match(account):
     assert not p.token_valid(token[:-2] + "zz")
     new = account.mcp_token(regenerate=True)
     assert new != token and not p.token_valid(token) and p.token_valid(new)
+
+
+def with_event(account, name, date, covers, recipes, source="Sanna Virtanen"):
+    o = account.new_draft(source=source)
+    state, version = p.draft(o["draft_id"])
+    state["menu_events"] = [{"id": name + date, "date": date, "event": name, "covers": covers,
+                             "dishes": [{"recipe": r, "covers": covers, "name": r} for r in recipes]}]
+    p.Store().put("drafts/" + state["id"], state, version)
+    return account.get_draft(o["draft_id"])
+
+
+def test_second_event_after_week_is_placed_still_orders_its_food(account):
+    # Re-judge: a 120-guest wedding gave a EUR 0 order once the week (with an earlier event) was placed.
+    account.save_rules({"weekly_limit": 1000000, "growth_limit": 1000000, "monthly_limit": 1000000})
+    account.place(approve_all(account, account.new_draft())["draft_id"])
+    first = with_event(account, "Wedding", "2026-11-21", 120, ["soup", "tart"])
+    assert first["total"] > 0
+    account.place(approve_all(account, first)["draft_id"])
+    second = with_event(account, "Wedding", "2026-11-21", 120, ["soup", "tart"])
+    assert second["total"] > 0.8 * first["total"]
+    assert all("Saturday wedding" not in (r.get("change_reason") or "") for r in second["rows"])
+    assert any("wedding on Saturday" in (r.get("change_reason") or "") for r in second["rows"])
