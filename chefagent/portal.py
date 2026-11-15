@@ -874,7 +874,7 @@ def mcp_token(regenerate=False):
     if doc and not regenerate:
         return doc["token"]
     scope = base64.urlsafe_b64encode(account_id().encode()).decode().rstrip("=")
-    token = "vat_" + scope + "_" + secrets.token_urlsafe(24)
+    token = "vat_" + scope + "." + secrets.token_urlsafe(24)
     Store().put("mcp", {"token": token, "created_at": now()}, version)
     if doc:
         log_event("Sanna replaced the connected-assistant access token", note="The old token stopped working")
@@ -883,7 +883,7 @@ def mcp_token(regenerate=False):
 
 def token_account(token):
     """Account id encoded in a well-formed token, or None. The secret is checked separately."""
-    m = re.fullmatch(r"vat_([A-Za-z0-9_-]{4,80})_([A-Za-z0-9_-]{20,64})", token or "")
+    m = re.fullmatch(r"vat_([A-Za-z0-9_-]{4,80})\.([A-Za-z0-9_-]{20,64})", token or "")
     if not m:
         return None
     try:
