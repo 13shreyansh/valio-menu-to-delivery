@@ -64,6 +64,10 @@ let S = {
   editing: false,
   media: null,
   mediaName: "",
+  uploadingPhoto: false,
+  photoGeneration: 0,
+  speaking: false,
+  confirmationAudio: null,
   listening: false,
   level: 0,
   notice: "",
@@ -531,7 +535,7 @@ function footer() {
 }
 function confirmation() {
   const o = S.order;
-  return `<section class="card confirmation">${icon("circle-check")}<h1>Order ${esc(o.order_number || o.confirmation?.order_number)} is recorded</h1><p class="muted">${money(o.total)} · ${esc(o.rule_note || "")}</p><div class="deliveries">${o.deliveries.map(deliveryMini).join("")}</div><p class="demo-note">This is a demo account. Valio's Junction test system has no order endpoint, so the order is stored on your account and nothing is shipped. Prices and stock were checked live with Valio at ${time(o.placed_at)}.</p><div class="row" style="margin-top:24px">${btn("View orders", "orders", "primary")}${btn("Dashboard", "dashboard", "ghost")}</div></section>`;
+  return `<section class="card confirmation">${icon("circle-check")}<h1>Order ${esc(o.order_number || o.confirmation?.order_number)} is recorded</h1><p class="muted">${money(o.total)} · ${esc(o.rule_note || "")}</p><div class="deliveries">${o.deliveries.map(deliveryMini).join("")}</div><p class="demo-note">This is a demo account. Valio's Junction test system has no order endpoint, so the order is stored on your account and nothing is shipped. Prices and stock were checked live with Valio at ${time(o.placed_at)}.</p><div class="row" style="margin-top:24px">${btn("View orders", "orders", "primary")}${btn("Dashboard", "dashboard", "ghost")}${S.account?.capabilities?.spokenConfirmation ? btn(S.speaking ? "Preparing audio…" : "Listen to confirmation", "listen-confirmation", "secondary", S.speaking ? "disabled" : "") : ""}</div>${S.confirmationAudio ? `<audio id="spoken-confirmation" controls aria-label="Spoken order confirmation" src="${esc(S.confirmationAudio)}" style="margin-top:16px;max-width:100%"></audio>` : ""}</section>`;
 }
 function catalogue() {
   return `<form class="search-form" id="catalogue-search"><input name="q" aria-label="Search products or codes" placeholder="Search products or codes, for example lactose-free milk" value="${esc(S.catalogueQuery)}">${btn("Search", "search", "secondary", S.busy ? "disabled" : "")}</form>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)} ${btn("Review order", "review", "link")}</p>` : ""}${!S.catalogueLoaded ? '<div class="skeleton" aria-label="Loading catalogue"></div>' : table(["Product", "Pack", "Code", "Price per pack", "Per kg or L", "Delivery", ""], S.catalogue.map((p) => `<tr class="${p.allowed ? "" : "unavailable"}"><td>${esc(p.name_fi || p.name)}</td><td>${packLabel({ pack: p.pack, unit: p.pack_dim, sales_unit: p.sales_unit })}</td><td class="product-code">${esc(p.id)}</td><td class="money">${money(p.unit_price)}</td><td class="money">${p.comparison_price ? money(p.comparison_price) : "—"}</td><td>${p.allowed ? date(p.delivery) : "Not available"}<span class="tiny">${p.allowed ? "In stock" : esc(p.reason)}</span></td><td>${btn("Add to order", "add", "secondary", `data-value="${esc(p.id)}" data-delivery="${esc(p.delivery || "")}" data-name="${esc(p.name_fi || p.name)}" ${!p.allowed || S.busy ? "disabled" : ""}`)}</td></tr>`).join(""))}`;
@@ -714,7 +718,7 @@ function drawer() {
               ? `${understood()}${offers(S.order)}<div class="ask-result"><p>${summary(S.order)} ${S.order.pending ? `${S.order.pending} thing${S.order.pending === 1 ? " needs" : "s need"} your OK.` : "Nothing needs your OK."}</p><div style="margin-top:16px">${btn("Review order", "review", "primary")}</div></div>`
               : ""
     }`;
-  return `<aside class="drawer" role="complementary" aria-label="Ask Valio"><header class="drawer-header"><h3>Ask Valio</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close Ask Valio"')}</header><div class="drawer-body">${body}</div><form class="composer" id="ask-form"><label class="sr-only" for="ask-input">Tell Valio what's changing</label><textarea id="ask-input" rows="3" placeholder="Tell Valio what's changing…" ${S.working || S.transcribing || S.micStarting ? "disabled" : ""}>${esc(S.input)}</textarea>${S.mediaName ? `<p class="small muted" style="margin-top:8px">${esc(S.mediaName)} ${btn("Remove", "remove-file", "link")}</p>` : ""}${S.transcribing ? `<p class="small muted">Reading your recording…</p>` : ""}${S.listening ? `<p class="small amber">Listening…</p><div class="meter"><i id="audio-level" style="width:${S.level}%"></i></div>` : ""}<div class="composer-actions">${btn(icon("paperclip") + "Add menu or photo", "attach", "attach", S.working ? "disabled" : "")}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="row" style="gap:8px">${btn(icon("mic"), "mic", `mic ${S.listening ? "listening" : ""}`, `aria-label="${S.listening ? "Stop recording" : "Start recording"}" ${S.working || S.micStarting || S.transcribing || S.busy ? "disabled" : ""}`)}${btn("Send", "send", "primary", S.working || S.listening || S.transcribing || S.micStarting ? "disabled" : "")}</div></div></form></aside>`;
+  return `<aside class="drawer" role="complementary" aria-label="Ask Valio"><header class="drawer-header"><h3>Ask Valio</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close Ask Valio"')}</header><div class="drawer-body">${body}</div><form class="composer" id="ask-form"><label class="sr-only" for="ask-input">Tell Valio what's changing</label><textarea id="ask-input" rows="3" placeholder="Tell Valio what's changing…" ${S.working || S.transcribing || S.micStarting ? "disabled" : ""}>${esc(S.input)}</textarea>${S.media?.preview_url ? `<img src="${esc(S.media.preview_url)}" alt="Your attached menu photo" style="display:block;max-width:100%;max-height:180px;object-fit:contain;margin-top:12px" referrerpolicy="no-referrer">` : ""}${S.uploadingPhoto ? `<p class="small muted" role="status">Saving your menu photo…</p>` : ""}${S.mediaName ? `<p class="small muted" style="margin-top:8px">${esc(S.mediaName)} ${btn("Remove", "remove-file", "link", S.uploadingPhoto ? "disabled" : "")}</p>` : ""}${S.transcribing ? `<p class="small muted">Reading your recording…</p>` : ""}${S.listening ? `<p class="small amber">Listening…</p><div class="meter"><i id="audio-level" style="width:${S.level}%"></i></div>` : ""}<div class="composer-actions">${btn(icon("paperclip") + "Add menu or photo", "attach", "attach", S.working || S.uploadingPhoto ? "disabled" : "")}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="row" style="gap:8px">${btn(icon("mic"), "mic", `mic ${S.listening ? "listening" : ""}`, `aria-label="${S.listening ? "Stop recording" : "Start recording"}" ${S.working || S.micStarting || S.transcribing || S.busy ? "disabled" : ""}`)}${btn("Send", "send", "primary", S.working || S.listening || S.transcribing || S.micStarting || S.uploadingPhoto ? "disabled" : "")}</div></div></form></aside>`;
 }
 function understood() {
   const r = S.order.reading;
@@ -949,7 +953,7 @@ function mutate(action, value) {
   return changeQueue;
 }
 async function send() {
-  if (S.working) return;
+  if (S.working || S.uploadingPhoto) return;
   const oldTotal = S.order.total;
   S.input = $("#ask-input")?.value || S.input;
   if (!S.input.trim() && !S.media) return;
@@ -1416,11 +1420,35 @@ document.addEventListener("click", async (e) => {
       ?.scrollIntoView({ behavior: "smooth" });
     return;
   }
+  if (action === "listen-confirmation") {
+    if (S.speaking) return;
+    S.speaking = true;
+    S.error = "";
+    render();
+    try {
+      const response = await fetch("/api/drafts/" + encodeURIComponent(S.order.draft_id) + "/spoken-confirmation", { method: "POST" });
+      if (!response.ok) {
+        const body = await response.json();
+        throw Error(body.error || "The confirmation could not be read aloud.");
+      }
+      if (S.confirmationAudio) URL.revokeObjectURL(S.confirmationAudio);
+      S.confirmationAudio = URL.createObjectURL(await response.blob());
+    } catch (error) {
+      S.error = error.message;
+    } finally {
+      S.speaking = false;
+      render();
+      $("#spoken-confirmation")?.play().catch(() => {});
+    }
+    return;
+  }
   if (action === "place") {
     await changeQueue;
     await task(async () => {
       S.order = await api("/drafts/" + S.order.draft_id + "/place", {});
       S.account = await api("/account");
+      if (S.confirmationAudio) URL.revokeObjectURL(S.confirmationAudio);
+      S.confirmationAudio = null;
       S.drawer = null;
       navigate("/orders/confirmation");
     });
@@ -1573,8 +1601,22 @@ document.addEventListener("change", async (e) => {
       render();
       return;
     }
+    const generation = ++S.photoGeneration;
     S.media = { mime: f.type, data: await asBase64(f) };
     S.mediaName = f.name;
+    if (S.account?.capabilities?.menuPhotos) {
+      S.uploadingPhoto = true;
+      S.error = "";
+      render();
+      try {
+        const receipt = await api("/media/menu", { media: S.media }, 1);
+        if (generation === S.photoGeneration) S.media = { ...S.media, preview_url: receipt.preview_url, media_id: receipt.id };
+      } catch (error) {
+        S.error = error.message;
+      } finally {
+        if (generation === S.photoGeneration) S.uploadingPhoto = false;
+      }
+    }
     render();
     return;
   }

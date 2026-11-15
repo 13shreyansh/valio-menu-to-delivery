@@ -2,7 +2,7 @@ import base64, json, queue, threading, time, uuid
 from contextvars import copy_context
 from .account_scope import account_id,account_name
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from . import portal as p, kitchen as k
 from .kitchen_intake import understand
 from .valio_api import ValioBusy
@@ -62,7 +62,8 @@ def logout():
 
 @router.get("/account", dependencies=[Depends(signed_in)])
 def account():
-    return p.account()
+    from .sponsor_media import capabilities
+    return {**p.account(), "capabilities": capabilities()}
 
 
 @router.post("/rules", dependencies=[Depends(signed_in)])
@@ -115,9 +116,23 @@ def search(q: str = ""):
 
 @router.post("/transcribe", dependencies=[Depends(signed_in)])
 async def transcribe(req: Request):
+    from .sponsor_media import transcribe as read_recording
     body = await req.json()
-    reading = understand(media=body.get("media"), source="audio")
-    return {"transcript": reading["transcript"]}
+    return read_recording(body.get("media"))
+
+
+@router.post("/media/menu", dependencies=[Depends(signed_in)])
+async def menu_photo(req: Request):
+    from .sponsor_media import upload_menu
+    body = await req.json()
+    return upload_menu(body.get("media"))
+
+
+@router.post("/drafts/{draft_id}/spoken-confirmation", dependencies=[Depends(signed_in)])
+def spoken_confirmation(draft_id: str):
+    from .sponsor_media import confirmation_audio
+    audio = confirmation_audio(p.get_draft(draft_id))
+    return Response(audio, media_type="audio/mpeg", headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/ask", dependencies=[Depends(signed_in)])

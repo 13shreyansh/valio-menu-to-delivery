@@ -20,11 +20,16 @@ class Conflict(KitchenError):
 class Store:
     def __init__(self, namespace=None):
         self.namespace=namespace or storage_namespace()
+        self.aiven_url = os.environ.get("AIVEN_DATABASE_URL")
+        self.aiven = None
+        if self.aiven_url:
+            from .aiven_store import AivenDocuments
+            self.aiven = AivenDocuments(self.aiven_url)
         self.pg = os.environ.get("STORE_URL")
         self.pg_key = os.environ.get("STORE_KEY")
         # Vercel Blob remains the fallback on Vercel when no Postgres store is configured.
-        self.token = None if self.pg else os.environ.get("BLOB_READ_WRITE_TOKEN")
-        if not self.pg and not self.token and os.environ.get("VERCEL"):
+        self.token = None if self.pg or self.aiven else os.environ.get("BLOB_READ_WRITE_TOKEN")
+        if not self.aiven and not self.pg and not self.token and os.environ.get("VERCEL"):
             raise KitchenError("Account storage is unavailable. Please try again.")
         self.local = Path(os.environ.get("AURORA_LOCAL_DB", "/tmp/valio-aurora.sqlite"))
 
@@ -77,6 +82,8 @@ class Store:
         return str(int(version or 0) + 1)
 
     def get(self, key):
+        if self.aiven:
+            return self.aiven.get(self.namespace + "/" + key)
         if self.pg:
             return self.pg_get(key)
         if self.token:
@@ -105,6 +112,8 @@ class Store:
             return (json.loads(row[0]), str(row[1])) if row else (None, None)
 
     def put(self, key, value, version=None):
+        if self.aiven:
+            return self.aiven.put(self.namespace + "/" + key, value, version)
         if self.pg:
             return self.pg_put(key, value, version)
         if self.token:
@@ -164,6 +173,8 @@ def clone_account(src, dst):
     rules and history. The connected-assistant token is never copied; the copy makes its own.
     Returns False where storage cannot copy (Blob or Postgres), and the caller keeps the shared kitchen."""
     s = Store(src)
+    if s.aiven:
+        return s.aiven.clone_account(src, dst)
     if s.pg or s.token:
         return False
     with sqlite3.connect(s.local) as db:
@@ -190,6 +201,8 @@ def clone_account(src, dst):
 def save_seed(src="accounts/aurora-v3"):
     """Freeze the freshly reset public kitchen as the template for private demo copies."""
     s = Store(src)
+    if s.aiven:
+        return s.aiven.clone_account(src, SEED, replace=True)
     with sqlite3.connect(s.local) as db:
         db.execute("DELETE FROM docs WHERE key LIKE ?", (SEED + "/%",))
     return clone_account(src, SEED)

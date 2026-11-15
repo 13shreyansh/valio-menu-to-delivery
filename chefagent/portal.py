@@ -924,6 +924,13 @@ def place(draft_id, assistant=False):
         committed = committed_order(draft_id, book)
         if committed:
             return committed
+        # A competing order can change cumulative spend or the shared stock pool.
+        # Recheck against the exact ledger version that this write will commit.
+        # If another writer wins after this check, CAS fails and we repeat it.
+        checked = build(state, book=book)
+        rows_for = lambda value: [(r["product_id"], r["units"], r["unit_price"], r.get("delivery")) for r in value["rows"]]
+        if not checked["can_place"] or checked["total"] != out["total"] or rows_for(checked) != rows_for(out):
+            raise k.KitchenError("Your budget or stock changed after another order. Review this order again before placing it.")
         book["orders"].insert(0, entry)
         book["drafts"] = [d for d in book.get("drafts", []) if d["draft_id"] != draft_id]
         book["events"].insert(

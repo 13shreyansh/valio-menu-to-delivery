@@ -353,3 +353,28 @@ def test_reconstructed_past_delivery_keeps_flow_totals_and_supplier_evidence(acc
     assert past['placed_at'].startswith('2026-11-01')
     assert past['evidence']==placed['evidence']
     assert set(r['delivery'] for r in past['rows'])=={'2026-11-02','2026-11-04','2026-11-06'}
+
+
+def test_concurrent_placement_rechecks_cumulative_budget(account, monkeypatch):
+    o = account.new_draft()
+    account.save_rules({"weekly_limit": round(o["total"] * 1.5, 2), "monthly_limit": 100000, "over_limit": "block"})
+    o = account.get_draft(o["draft_id"])
+    for check in o["checks"]:
+        if check["can_approve"]:
+            o = account.change(o["draft_id"], "approve", check["id"])
+    assert o["can_place"]
+    original_put = p.Store.put
+    injected = False
+    def racing_put(store, key, value, version=None):
+        nonlocal injected
+        if key == "ledger" and not injected and any(x["draft_id"] == o["draft_id"] for x in value["orders"]):
+            injected = True
+            competing, current = store.get("ledger")
+            competing["orders"].append({"draft_id": "b" * 32, "order_number": "OTHER", "total": o["total"],
+                                         "week": 47, "status": "Placed", "placed_at": "2026-11-15T08:00:00+02:00"})
+            original_put(store, "ledger", competing, current)
+        return original_put(store, key, value, version)
+    monkeypatch.setattr(p.Store, "put", racing_put)
+    with pytest.raises(k.KitchenError, match="another order"):
+        account.place(o["draft_id"])
+    assert [x["draft_id"] for x in account.ledger()[0]["orders"]] == ["b" * 32]

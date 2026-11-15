@@ -1,3 +1,9 @@
+Implement the documented Valio sponsor integrations without changing the submitted portal description.
+Store menu photos and resized previews in Cloudinary, and use ElevenLabs for speech input and explicit spoken confirmations.
+Move account documents, order history and cumulative budget writes to Aiven PostgreSQL with version-checked transactions.
+Preserve private kitchens, approval controls, supplier behaviour and existing layouts; test failure paths before release.
+Verify real provider calls and the deployed wide/mobile user flow, then obtain independent review before final publication.
+
 VALIO / Sun 15 Nov 06:20 Helsinki / 70daa59 / https://valio.72.61.22.106.sslip.io
 
 Job paraphrase: fix "Valio is unavailable" (Valio API rate limit), stress test the live site, fix every error and every issue from the independent re-judge (review/REVIEW-2.md, 5.55/10 before fixes), deploy only the valio container, reset the demo account.

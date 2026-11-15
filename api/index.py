@@ -65,7 +65,10 @@ def health():
     return {
         "ok": True,
         "build_commit": os.environ.get("VERCEL_GIT_COMMIT_SHA") or os.environ.get("BUILD_COMMIT"),
-        "storage": bool(os.environ.get("STORE_URL") or os.environ.get("BLOB_READ_WRITE_TOKEN") or not os.environ.get("VERCEL")),
+        "storage": bool(os.environ.get("AIVEN_DATABASE_URL") or os.environ.get("STORE_URL") or os.environ.get("BLOB_READ_WRITE_TOKEN") or not os.environ.get("VERCEL")),
+        "storage_backend": "aiven-postgresql" if os.environ.get("AIVEN_DATABASE_URL") else "configured-store" if os.environ.get("STORE_URL") else "blob" if os.environ.get("BLOB_READ_WRITE_TOKEN") else "sqlite",
+        "cloudinary": all(os.environ.get(k) for k in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")),
+        "elevenlabs": bool(os.environ.get("ELEVENLABS_API_KEY")),
         "valio": bool(os.environ.get("VALIO_API_KEY")),
         "gemini": bool(os.environ.get("GEMINI_API_KEY")),
     }
