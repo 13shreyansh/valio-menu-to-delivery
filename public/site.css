@@ -83,7 +83,7 @@ pre code{background:none;padding:0}
  .cols,.split{grid-template-columns:1fr;gap:28px}
  .facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
  .band{padding:40px 0}
- .doc{grid-template-columns:1fr;gap:24px;padding:32px 0 56px}
+ .doc{grid-template-columns:minmax(0,1fr);gap:24px;padding:32px 0 56px}
  .doc aside{position:static;grid-auto-flow:column;overflow-x:auto;white-space:nowrap;padding-bottom:8px}
  .top nav{gap:16px}
  .chain li+li:before{width:14px}

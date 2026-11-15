@@ -419,21 +419,27 @@ function orderTable(rows, recent = false) {
   );
 }
 function ordersPage() {
+  // The account's draft list can lag the open draft (a fresh draft is indexed after /account loaded).
+  const drafts = (S.account.drafts || []).filter(
+    (d) => String(d.status).toLowerCase() === "draft",
+  );
+  const open = S.order;
+  if (
+    open?.status === "draft" &&
+    open.rows.some((r) => r.units > 0) &&
+    !drafts.some((d) => d.draft_id === open.draft_id)
+  )
+    drafts.unshift({
+      ...open,
+      order_number: "Week 47",
+      placed_by: open.source || "Sanna Virtanen",
+      placed_at: open.quote_at,
+      status: "Draft",
+      products: open.rows.filter((r) => r.units > 0).length,
+    });
   const rows =
     S.tab === "Drafts"
-      ? S.account.drafts ||
-        (S.order.status === "draft"
-          ? [
-              {
-                ...S.order,
-                order_number: "Week 47",
-                placed_by: "Sanna Virtanen",
-                placed_at: S.order.quote_at,
-                status: "Draft",
-                products: S.order.rows.length,
-              },
-            ]
-          : [])
+      ? drafts
       : S.account.orders.filter((o) => o.status === S.tab);
   return `<div class="tabs">${["Drafts", "Placed", "Delivered"].map((t) => btn(t, "order-tab", S.tab === t ? "active" : "", `data-value="${t}"`)).join("")}</div>${orderTable(rows)}`;
 }
@@ -580,13 +586,15 @@ function settings() {
 }
 function rulesView() {
   const r = S.account.rules;
-  const stamp = `Changed by ${esc(r.changed_by)}, ${new Date(r.changed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+  const stamp = r.changed_at
+    ? `Changed by ${esc(r.changed_by || "your team")}, ${new Date(r.changed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+    : "Not changed yet";
   const row = (label, control) =>
     `<div class="rule-row"><label>${label}<span class="tiny">${stamp}</span></label>${control}</div>`;
   const euro = (label, key) =>
     row(
       label,
-      `<div class="row"><span>€</span><input type="number" min="1" step=".01" aria-label="${label}" data-rule="${key}" value="${r[key]}"></div>`,
+      `<div class="row"><span>€</span><input type="number" min="1" step=".01" aria-label="${label}" data-rule="${key}" value="${r[key] ?? ""}"></div>`,
     );
   return `<section class="rule-section"><h3>Budget</h3>${euro("Weekly limit, all orders together", "weekly_limit")}${euro("Monthly limit, all orders together", "monthly_limit")}${row("When an order goes over a limit", `<select aria-label="When an order goes over a limit" data-rule="over_limit"><option value="ask" ${r.over_limit === "ask" ? "selected" : ""}>Ask me first</option><option value="block" ${r.over_limit === "block" ? "selected" : ""}>Don't allow</option></select>`)}</section><section class="rule-section"><h3>Swaps</h3>${row("Ask me before any product swap", `<input class="toggle" type="checkbox" aria-label="Ask me before any product swap" data-rule="ask_swap" ${r.ask_swap ? "checked" : ""}>`)}${row("Only swap to products with the same or fewer allergens", `<input class="toggle" type="checkbox" aria-label="Only swap to products with the same or fewer allergens" data-rule="same_allergens" ${r.same_allergens ? "checked" : ""}>`)}</section><section class="rule-section"><h3>Allergens</h3><div class="chips">${
     r.allergens
@@ -623,7 +631,7 @@ function rulesView() {
 function connected() {
   const last = S.account.events.find((e) => e.by === "Aurora Group assistant");
   const token = S.account.mcp_token;
-  return `<h2>Connect your own AI assistant</h2><p class="muted" style="margin-top:12px">Your company's purchasing agent, Claude or ChatGPT can order from Valio through the open Model Context Protocol (MCP). It works inside the same ordering rules as your team and can never approve on your behalf.</p><h3>Address</h3><div class="copy-row"><input readonly aria-label="MCP address" value="${esc(S.account.mcp_url)}">${btn(icon("copy") + "Copy", "copy", "secondary", 'data-copy="url"')}</div><h3>Access token for Hotel Aurora</h3><div class="copy-row"><input readonly aria-label="Access token" value="${S.showToken ? esc(token) : esc(token.slice(0, 12)) + "••••••••••••"}">${btn(S.showToken ? "Hide" : "Show", "toggle-token", "secondary")}${btn(icon("copy") + "Copy", "copy", "secondary", 'data-copy="token"')}</div><p class="small muted" style="margin-top:8px">Send it as <code>Authorization: Bearer</code> with every call. Anyone with this token can order for Hotel Aurora within your rules. ${btn("Replace token", "regenerate-token", "link")}</p><h3>Claude or ChatGPT</h3><ol class="steps"><li>Add a custom connector (Claude: Settings → Connectors; ChatGPT: Settings → Apps, developer mode).</li><li>Paste your personal connector address: ${btn("Copy connector address", "copy", "link", 'data-copy="connector"')}. It carries your token, so keep it private.</li><li>Ask in plain words: “1,000 litres of lactose-free milk by Monday”, or dishes, guests and a day.</li></ol><h3>Your own agent</h3><p class="small muted">Seven tools, from find_products and quote_products to order_products and place_order. Each returns typed JSON with a published schema. <a href="/how-it-works">How it works</a></p><h3>Connected</h3><div class="connected-row">Aurora Group assistant<span class="tiny" style="display:block">${last ? "Last used " + date(last.at) + " " + time(last.at) : "Not used yet"}</span></div>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
+  return `<h2>Connect your own AI assistant</h2><p class="muted" style="margin-top:12px">Your company's purchasing agent, Claude or ChatGPT can order from Valio through the open Model Context Protocol (MCP). It works inside the same ordering rules as your team and can never approve on your behalf.</p><h3>Address</h3><div class="copy-row"><input readonly aria-label="MCP address" value="${esc(S.account.mcp_url)}">${btn(icon("copy") + "Copy", "copy", "secondary", 'data-copy="url"')}</div><h3>Access token for Hotel Aurora</h3><div class="copy-row"><input readonly aria-label="Access token" value="${!token ? "" : S.showToken ? esc(token) : esc(token.slice(0, 12)) + "••••••••••••"}" placeholder="No token yet">${btn(S.showToken ? "Hide" : "Show", "toggle-token", "secondary")}${btn(icon("copy") + "Copy", "copy", "secondary", 'data-copy="token"')}</div><p class="small muted" style="margin-top:8px">Send it as <code>Authorization: Bearer</code> with every call. Anyone with this token can order for Hotel Aurora within your rules. ${btn("Replace token", "regenerate-token", "link")}</p><h3>Claude or ChatGPT</h3><ol class="steps"><li>Add a custom connector (Claude: Settings → Connectors; ChatGPT: Settings → Apps, developer mode).</li><li>Paste your personal connector address: ${btn("Copy connector address", "copy", "link", 'data-copy="connector"')}. It carries your token, so keep it private.</li><li>Ask in plain words: “1,000 litres of lactose-free milk by Monday”, or dishes, guests and a day.</li></ol><h3>Your own agent</h3><p class="small muted">Seven tools, from find_products and quote_products to order_products and place_order. Each returns typed JSON with a published schema. <a href="/how-it-works">How it works</a></p><h3>Connected</h3><div class="connected-row">Aurora Group assistant<span class="tiny" style="display:block">${last ? "Last used " + date(last.at) + " " + time(last.at) : "Not used yet"}</span></div>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
 }
 function team() {
   return `<h2>Team</h2><div style="height:20px"></div>${table(["Name", "Role", "Permission"], S.account.team.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(t.role)}</td><td>${esc(t.permission)}</td></tr>`).join(""))}`;
@@ -631,7 +639,7 @@ function team() {
 function kitchenProfile() {
   const names = S.account.ingredient_names || {},
     units = S.account.ingredient_units || {};
-  return `<h2>Hotel Aurora</h2><p class="muted" style="margin-top:12px">Helsinki · Customer HC-1001</p><p class="small muted" style="margin-top:16px">Hotel Aurora is a sample kitchen account. Its menus, recipes, bookings, stock and past quantities are account records. Product names, prices, availability and order-by times come from Valio.</p><section class="card"><h3>Booked guests</h3>${S.account.bookings.map((b) => `<div class="summary-row"><span>${date(b.date)}</span><span>${b.covers} guests</span></div>`).join("")}</section><section class="card"><h3>Recipes and menu</h3>${Object.entries(
+  return `<h2>Hotel Aurora</h2><p class="muted" style="margin-top:12px">Helsinki · Customer HC-1001</p><p class="small muted" style="margin-top:16px">Hotel Aurora is a sample kitchen account. Its menus, recipes, bookings, stock and past quantities are account records. Product names, prices, availability and order-by times come from Valio.</p><section class="card"><h3>Booked guests</h3>${S.account.bookings.map((b) => `<div class="summary-row"><span>${date(b.date)}</span><span>${b.covers != null ? plural(b.covers, "guest") : "Guests not recorded"}</span></div>`).join("")}</section><section class="card"><h3>Recipes and menu</h3>${Object.entries(
     S.account.recipes,
   )
     .map(
@@ -641,7 +649,7 @@ function kitchenProfile() {
         )
           .map(
             ([name, amount]) =>
-              `<p class="small muted">${esc(names[name] || name)} · ${amount} ${units[name] === "l" ? "ml" : "g"} per guest</p>`,
+              `<p class="small muted">${esc(names[name] || name)} · ${amount != null ? `${num(amount)} ${units[name] === "l" ? "ml" : "g"} per guest` : "amount not recorded"}</p>`,
           )
           .join("")}</details>`,
     )
@@ -652,7 +660,7 @@ function kitchenProfile() {
   )
     .map(
       ([name, n]) =>
-        `<div class="summary-row"><span>${esc(names[name] || name.replace("_", " "))}</span><span>${n ? num(n) + " " + U(units[name] || "kg") : "None"}</span></div>`,
+        `<div class="summary-row"><span>${esc(names[name] || name.replace("_", " "))}</span><span>${n == null ? "Not recorded" : n ? num(n) + " " + U(units[name] || "kg") : "Not in stock"}</span></div>`,
     )
     .join("")}</section>`;
 }
@@ -663,14 +671,20 @@ function events() {
           .slice(0, 14)
           .map(
             (e) =>
-              `<div class="event">${e.link ? `<a href="${esc(e.link)}">${esc(e.text)}</a>` : esc(e.text)}<p class="small muted">${e.total !== null && e.total !== undefined ? money(e.total) + (e.note ? " · " : "") : ""}${esc(e.note || "")}</p><span class="tiny">${date(e.at)} · ${time(e.at)}</span></div>`,
+              `<div class="event">${e.link ? `<a href="${esc(e.link)}">${esc(e.text)}</a>` : esc(e.text)}<p class="small muted">${e.total !== null && e.total !== undefined ? money(e.total) + (e.note ? " · " : "") : ""}${esc(e.note || "")}</p><span class="tiny">${e.at ? date(e.at) + " · " + time(e.at) : "Time not recorded"}</span></div>`,
           )
           .join("")
       : '<p class="muted" style="margin-top:12px">Orders, approvals and rule changes will appear here.</p>'
   }</section>`;
 }
 function offers(o) {
-  const rows = o.rows.filter((r) => r.options && r.requested && r.units > 0);
+  // Only the products this request asked for. Earlier requests' lines stay on the order, not on this answer.
+  const key = (p) => String(p.name).toLowerCase() + "|" + p.quantity;
+  const asked = (o.reading?.products || []).map(key);
+  const rows = o.rows.filter(
+    (r) =>
+      r.options && r.requested && r.units > 0 && asked.includes(key(r.requested)),
+  );
   if (!rows.length) return "";
   const r = rows[0];
   return `<div class="offers"><h3>Offers compared for ${num(r.requested.quantity)} ${U(r.requested.unit)} by ${date(r.requested.date)}</h3>${r.options
@@ -1342,6 +1356,7 @@ document.addEventListener("click", async (e) => {
   if (action === "order-tab") {
     S.tab = value;
     render();
+    refreshAccount();
     return;
   }
   if (action === "orders") {
