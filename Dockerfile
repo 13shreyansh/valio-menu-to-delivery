@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt "uvicorn[standard]"
 COPY api ./api
 COPY chefagent ./chefagent
 COPY public ./public
+COPY scripts ./scripts
 # Account documents live on a mounted volume. Valio's catalogue is downloaded
 # from Valio's API on first start and is never part of the image.
 ENV AURORA_LOCAL_DB=/data/accounts.sqlite

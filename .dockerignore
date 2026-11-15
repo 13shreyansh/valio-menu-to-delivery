@@ -5,7 +5,6 @@ artifacts
 data
 eval
 tests
-scripts
 exports
 projects
 *.log
