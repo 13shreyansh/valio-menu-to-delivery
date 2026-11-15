@@ -39,6 +39,11 @@ def unseal(token):
         if isinstance(e, KitchenError): raise
         raise KitchenError('This sheet could not be checked. Reload it.') from None
 
+def nice_day(day):
+    try:
+        d=dt.date.fromisoformat(str(day)[:10]); return f"{d.strftime('%A')} {d.day} {d.strftime('%b')}"
+    except ValueError: return str(day)
+
 def initial_state():
     return {'created': time.time(), 'wedding': None, 'budget': KITCHEN['budget'], 'overrides': {},
             'approvals': {}, 'events': [], 'calls': [], 'extra': []}
@@ -90,7 +95,7 @@ def build(state, fresh=False, context=None, progress=None):
         recipe = RECIPES[s['recipe']]
         for role, grams in recipe['ingredients'].items():
             allocations[(delivery_for(s['date']), role)].append({
-                'dish': recipe['name'], 'date': s['date'], 'covers': s['covers'],
+                'dish': recipe['name'], 'recipe': s['recipe'], 'assumed': bool(recipe.get('assumed')), 'date': s['date'], 'covers': s['covers'],
                 'per_cover': grams, 'amount': round(s['covers']*grams/1000, 6),
                 'wedding': s.get('wedding', False)})
     if progress: progress('scaled', {'covers':sum(x['covers'] for x in (state.get('wedding') or {}).get('dishes',[]))})
@@ -105,7 +110,7 @@ def build(state, fresh=False, context=None, progress=None):
             for (d,role),parts in allocations.items():
                 if d!=day:continue
                 gross=sum(p['amount'] for p in parts)
-                if gross>usable.get(role,0):needed[day].append(INGREDIENTS[role]['ids'][0])
+                if gross>usable.get(role,0) and INGREDIENTS[role]['ids']:needed[day].append(INGREDIENTS[role]['ids'][0])
                 usable[role]=max(0,usable.get(role,0)-gross)
         progress('stock', {'quotes':quoted,'needed':needed})
     remaining = copy.deepcopy(STOCK)
@@ -118,8 +123,8 @@ def build(state, fresh=False, context=None, progress=None):
         for role in roles:
             parts = allocations[(day,role)]
             gross = round(sum(p['amount'] for p in parts), 6)
-            used_stock = min(remaining[role], gross)
-            remaining[role] = round(remaining[role] - used_stock, 6)
+            used_stock = min(remaining.get(role,0), gross)
+            remaining[role] = round(remaining.get(role,0) - used_stock, 6)
             net = round(gross-used_stock, 6)
             if net <= 0: continue
             candidates = []
@@ -151,7 +156,8 @@ def build(state, fresh=False, context=None, progress=None):
                 demand48 = sum(x['amount'] for x in parts if x['date'] <= (dt.date.fromisoformat(day)+dt.timedelta(days=2)).isoformat())
                 candidates.sort(key=lambda c: (c[1]['unit_price']/c[3] if c[3] <= demand48 else float('inf'), c[3]))
             if not candidates:
-                checks.append({'id':'gap-'+day+'-'+role,'kind':'gap','text':f'No safe {role} can be confirmed for {day}. Change the menu or restore supply.',
+                label=INGREDIENTS[role].get('label') or role.replace('_',' ')
+                checks.append({'id':'gap-'+day+'-'+role,'kind':'gap','text':(f'Valio has no product matching {label} that fits your kitchen rules. Change the dish or add a product from the catalogue.' if not INGREDIENTS[role]['ids'] else f'No {label} that fits your rules can be delivered on {nice_day(day)}. Change the menu or the day.'),
                                'button':'Check menu','blocking':True,'can_approve':False,'row_ids':[]})
                 continue
             p,pr,av,pack,source,units = candidates[0]
@@ -168,7 +174,8 @@ def build(state, fresh=False, context=None, progress=None):
                    'unit_price':pr['unit_price'],'comparison_price':pr.get('comparison_price'),
                    'comparison_unit':pr.get('comparison_unit'),'total':amount,'availability':av,
                    'contains':p['contains'],'may_contain':p['may_contain'],'allocations':parts,
-                   'change':None,'reason':'Menu × booked covers, less usable stock, rounded up to sales units.'}
+                   'change':None,'reason':'Menu × booked covers, less usable stock, rounded up to sales units.',
+                   'assumed':any(x.get('assumed') for x in parts),'edited':rid in state['overrides']}
             if state.get('wedding') and any(x.get('wedding') for x in parts):
                 row['change'] = 'More' if any(not x.get('wedding') for x in parts) else 'Added'
                 row['change_reason'] = 'for the new wedding menu' if state['wedding'].get('from_photo') else 'for Saturday wedding'
@@ -187,29 +194,49 @@ def build(state, fresh=False, context=None, progress=None):
                     row['pack_saving_per_l']=round(saving,2)
                     cream_rows.append(row)
             if units > (av.get('amount') or 0):
-                checks.append({'id':'stock-'+rid,'kind':'gap','text':f'{row["name"]}: not enough confirmed Valio stock. Reduce the quantity or change the menu.', 'button':'Restore quantity','blocking':True,'can_approve':False,'row_ids':[rid]})
+                checks.append({'id':'stock-'+rid,'kind':'gap','text':f'{row["name"]}: Valio has {int(av.get("amount") or 0):,} packs for {nice_day(day)}, fewer than the {units:,} on this order. Reduce the quantity or change the menu.', 'button':'Restore quantity','blocking':True,'can_approve':False,'row_ids':[rid]})
             if purchased+1e-6 < net:
                 checks.append({'id':'short-'+rid,'kind':'gap','text':f'{row["name"]}: {net-purchased:g} {row["unit"]} still needed. Put back the recipe quantity.',
                                'button':'Restore quantity','blocking':True,'can_approve':False,'row_ids':[rid]})
             if cutoff_passed(av.get('closing_time')):
-                checks.append({'id':'cutoff-'+rid,'kind':'gap','text':f'{row["name"]}: Valio cut-off passed. A new delivery must be confirmed before placing.',
+                checks.append({'id':'cutoff-'+rid,'kind':'gap','text':f'{row["name"]}: the order-by time for {nice_day(day)} has passed. Move this to a later delivery.',
                                'button':'Check delivery','blocking':True,'can_approve':False,'row_ids':[rid]})
             rows.append(row)
-    # Explicit chef additions from catalogue, never from the model.
-    for extra in state.get('extra',[]):
-        p = cat.get(extra['product_id'])
-        if not p or product_violations(p, policy=KITCHEN['policy']): raise KitchenError('This product breaks the kitchen rules.')
-        day=DELIVERIES[-1]; pid=p['id']; pr=api.price(day,[pid]).get(pid,{}) ; av=api.availability(day,[pid]).get(pid,{})
-        if not av.get('orderable') or (av.get('available_date') or '9999')>day or pr.get('error') or pr.get('unit_price') is None or cutoff_passed(av.get('closing_time')):
-            raise KitchenError('Valio cannot confirm this product for Friday. Choose another product.')
-        pack,source=pack_for(p,pr); units=state['overrides'].get('extra-'+pid,extra['units'])
-        if units>av.get('amount',0): raise KitchenError('Not enough stock for this addition.')
-        rows.append({'id':'extra-'+pid,'role':'extra','product_id':pid,'name':p['name_fi'] or p['name'], 'delivery':day,
-                     'unit':p.get('pack_dim') or 'kg','sales_unit':p['sales_unit'],'pack':pack,'pack_source':source,
-                     'units':units,'planned_units':units,'gross':units*pack,'stock':0,'need':units*pack,'ordered':units*pack,
-                     'unit_price':pr['unit_price'],'total':round(units*pr['unit_price'],2),'availability':av,
-                     'contains':p['contains'],'may_contain':p['may_contain'],'allocations':[],
-                     'change':'Added','change_reason':'by the chef','reason':'Chef added this product.'})
+    # Explicit product lines: chef additions and direct product requests. Never invented by the model.
+    extras=[e for e in state.get('extra',[]) if cat.get(e['product_id'])]
+    extra_quotes={}
+    for day in DELIVERIES:
+        ids=[e['product_id'] for e in extras if (e.get('delivery') or DELIVERIES[-1])==day]
+        if ids: extra_quotes[day]=(api.price(day,ids),api.availability(day,ids))
+    for extra in extras:
+        p=cat.get(extra['product_id']); day=extra.get('delivery') or DELIVERIES[-1]; pid=p['id']; rid='extra-'+pid
+        name=p['name_fi'] or p['name']
+        pr=extra_quotes[day][0].get(pid,{}); av=extra_quotes[day][1].get(pid,{})
+        violations=product_violations(p, policy=KITCHEN['policy'])
+        if violations or pr.get('error') or pr.get('unit_price') is None:
+            checks.append({'id':'gap-'+rid,'kind':'gap','text':(f'{name} breaks a kitchen rule: {violations[0]}. Remove it or change the rule in Settings.' if violations else f'Valio has no price for {name} on {nice_day(day)}. Choose another product.'),
+                           'blocking':True,'can_approve':False,'row_ids':[],'remove_extra':pid})
+            continue
+        try: pack,source=pack_for(p,pr)
+        except KitchenError: pack,source=(p.get('pack') or 1),'Catalogue pack'
+        units=state['overrides'].get(rid,extra['units'])
+        need=extra.get('need') or {}
+        row={'id':rid,'role':'extra','product_id':pid,'name':name,'delivery':day,
+             'unit':p.get('pack_dim') or 'pcs','sales_unit':p['sales_unit'],'pack':pack,'pack_source':source,
+             'units':units,'planned_units':extra['units'],'gross':round(units*pack,6),'stock':0,'need':round(units*pack,6),'ordered':round(units*pack,6),
+             'unit_price':pr['unit_price'],'comparison_price':pr.get('comparison_price'),'comparison_unit':pr.get('comparison_unit'),
+             'total':round(units*pr['unit_price'],2),'availability':av,
+             'contains':p['contains'],'may_contain':p['may_contain'],'allocations':[],
+             'change':'Added','change_reason':extra.get('why') or 'by the chef','reason':extra.get('reason') or 'Added from the catalogue.',
+             'requested':need or None,'edited':rid in state['overrides'],'options':extra.get('options'),'compared':extra.get('compared')}
+        late=not av.get('orderable') or (av.get('available_date') or '9999')>(need.get('date') or day)
+        if late:
+            checks.append({'id':'late-'+rid,'kind':'gap','text':f'{name} cannot arrive by {nice_day(need.get("date") or day)}. Choose another product or day.','blocking':True,'can_approve':False,'row_ids':[rid]})
+        elif cutoff_passed(av.get('closing_time')):
+            checks.append({'id':'cutoff-'+rid,'kind':'gap','text':f'{name}: the order-by time for {nice_day(day)} has passed. Choose a later delivery.','blocking':True,'can_approve':False,'row_ids':[rid]})
+        elif units>(av.get('amount') or 0):
+            checks.append({'id':'stock-'+rid,'kind':'gap','text':f'{name}: Valio has {int(av.get("amount") or 0):,} packs for {nice_day(day)}, fewer than the {units:,} on this order. Reduce the quantity.','blocking':True,'can_approve':False,'row_ids':[rid]})
+        rows.append(row)
     previous={r['id']:r for r in state.get('previous_rows',[])}
     for row in rows:
         old=previous.get(row['id'])
@@ -242,7 +269,7 @@ def build(state, fresh=False, context=None, progress=None):
     if progress: progress('packs', {'rows':rows,'checks':checks})
     total = round(sum(r['total'] for r in rows),2)
     if total>state['budget']:
-        checks.append({'id':'budget','kind':'budget','text':f'This order is €{total-state["budget"]:.2f} over your weekly budget of €{state["budget"]:,.2f}.',
+        checks.append({'id':'budget','kind':'budget','text':f'This order is €{total-state["budget"]:,.2f} over your weekly budget of €{state["budget"]:,.2f}.',
                        'button':'OK this week','alternative':'Show costliest','row_ids':[r['id'] for r in rows], 'can_approve':True,
                        'proof':'An OK applies only to these products, quantities and prices. Your weekly budget stays unchanged.'})
     row_by_id={r['id']:r for r in rows}

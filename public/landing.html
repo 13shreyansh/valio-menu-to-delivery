@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#FFFFFF"><title>Valio Aimo ordering for professional kitchens</title><meta name="description" content="Tell Valio the dishes and guests, or a product and an amount. Valio prepares the order from live prices and stock, inside your rules. Open to your own purchasing agent over MCP."><link rel="icon" href="data:,"><link rel="preload" href="/fonts/hanken-grotesk-latin-600.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/fonts/hanken-grotesk-latin-400.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="/site.css"></head><body>
+<div class="wrap"><header class="top"><a class="wordmark" href="/">Valio Aimo</a><nav><a href="/how-it-works">How it works</a><a href="#signin">Sign in</a></nav></header>
+<main>
+<section class="hero" id="signin">
+<div><h1>Your kitchen plans. Valio prepares the order.</h1>
+<p class="lead">For hotel and chain kitchens that buy from Valio Aimo. Say the dishes and guests, or a product and an amount. Valio does the recipe maths, checks live price and stock, and prepares the order. You approve only what your own rules send to you.</p>
+<div class="actions"><button class="btn" id="demo">Try the demo account</button><a class="btn quiet" href="/how-it-works">How it works</a></div>
+<p class="error" id="err" role="alert" hidden></p>
+<p class="fine">Opens Hotel Aurora, a sample kitchen. No password. Prices, stock and order-by times are live from Valio Aimo's Junction 2026 test system; orders are recorded on the account and nothing ships. Valio customers sign in with the company account set up by their Valio contact.</p></div>
+<figure class="specimen" aria-label="Example request and the offers Valio returned">
+<div class="ask">“I need 1,000 litres of lactose-free milk by Monday. Find an option that meets our requirements based on price and availability.”<span>Typed in Ask Valio, or sent by the buyer's own agent</span></div>
+<ul class="steps"><li>23 lactose-free milks matched in the catalogue<b>done</b></li><li>Live price, stock and order-by time for Monday 16 Nov<b>done</b></li><li>Ranked by price per litre among those that arrive in time<b>done</b></li></ul>
+<div class="offer best"><span class="rank">Best</span><div>Valio Arki Eila kevytmaitojuoma 1 L<small>1,000 × 1 L · in stock · order by Sun 17:00</small></div><div class="eur">€1,010.00<small>€1.01 / L</small></div></div>
+<div class="offer"><span class="rank">Better</span><div>Valio Arki Eila rasvaton maitojuoma 1 L<small>1,000 × 1 L · €0.09 more per litre</small></div><div class="eur">€1,100.00<small>€1.10 / L</small></div></div>
+<div class="offer"><span class="rank">Good</span><div>Valio Eila 3 % maitojuoma 1 L<small>1,000 × 1 L · €0.39 more per litre</small></div><div class="eur">€1,400.00<small>€1.40 / L</small></div></div>
+<p class="verdict">With the week's order this passes Hotel Aurora's €1,500 weekly limit, so it waits for the head chef's OK.</p>
+<p class="fine" style="margin-top:10px">Real result from the demo account, checked with Valio's API on 15 Nov 2026.</p>
+</figure>
+</section>
+</main></div>
+<section class="band tinted"><div class="wrap"><h2>The order is the easy part. Getting to it is the busy work.</h2>
+<p class="sub">A head chef turns next week's menu into an order by hand: recipes times guests, minus what is on the shelf, rounded up to pack sizes, checked against stock and the budget. Then a wedding lands on Saturday and it all starts again.</p>
+<ul class="chain"><li><span>Menu and bookings</span></li><li><span>Recipes × guests</span></li><li><span>Less stock on hand</span></li><li><span>Products and packs</span></li><li><span>Price, stock, order-by time</span></li><li><span>Approved order</span></li></ul>
+<p class="sub">Valio already holds the catalogue, the prices and the stock. So Valio does these steps, and shows the maths behind every line.</p></div></section>
+<section class="band"><div class="wrap"><h2>The buyer sets three controls. They hold in every channel.</h2>
+<div class="cols">
+<div><h3>Spending limits</h3><p>A weekly and a monthly limit, counted across every placed order: portal, Ask Valio and connected agents together. Over the limit, the order waits for a person or is refused, as the buyer chose.</p></div>
+<div><h3>Allergens and swaps</h3><p>Products that contain or may contain a banned allergen are never ordered. A swap for a late product must keep the recipe working, add no allergen, and be approved first.</p></div>
+<div><h3>Approvals and the log</h3><p>Changing a quantity after an OK reopens that OK. Every approval, rule change, refusal and order is written to the account log with who and when.</p></div>
+</div></div></section>
+<section class="band tinted"><div class="wrap"><div class="split">
+<div><h2>Open to the buyer's own purchasing agent</h2>
+<p class="sub">A hotel chain's agent connects to Valio over the Model Context Protocol with a per-account token. One call finds products, compares offers and places the order within its authority, or hands it to a person with a review link. It can never approve for them.</p>
+<p class="sub"><a href="/how-it-works#agents">Tools, schemas and trust rules</a></p></div>
+<pre><code>POST /mcp/   Authorization: Bearer vat_…
+
+order_products({
+  items: [{ query: "lactose-free milk",
+            quantity: 1000, unit: "l" }],
+  deliver_by: "Monday"
+})
+
+→ status: "needs_approval"
+  total: 1010.00
+  approvals: ["Bigger change: €1,010.00"]
+  review_url: "…/orders/draft-…"</code></pre>
+</div></div></section>
+<section class="band"><div class="wrap"><h2>Measured on the demo account</h2>
+<dl class="facts"><div><dt>5 s</dt><dd>from the milk request to ranked offers, with live Valio calls</dd></div><div><dt>46</dt><dd>products prepared for week 47 from the menu, 412 booked guests and stock</dd></div><div><dt>3</dt><dd>approvals raised by a 120-guest wedding: fish swap, larger pack, over limit</dd></div><div><dt>7</dt><dd>MCP tools with typed results for outside agents</dd></div></dl>
+<div class="actions"><button class="btn" id="demo2">Try the demo account</button></div></div></section>
+<footer class="foot"><div class="wrap">Built for Valio Aimo's Trusted Trade Agents challenge, Junction 2026. All data is synthetic: Valio's mock catalogue, prices and availability. Hotel Aurora's menus, recipes, bookings and stock are sample account records. <a href="/how-it-works#assumptions">Assumptions and next steps</a></div></footer>
+<script>
+fetch("/api/warm").catch(()=>{});
+const next=new URLSearchParams(location.search).get("next");
+async function enter(b){b.disabled=true;b.textContent="Opening Hotel Aurora…";try{const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});if(!r.ok)throw 0;location.href=next&&next.startsWith("/")&&!next.startsWith("//")?next:"/dashboard"}catch(e){b.disabled=false;b.textContent="Try the demo account";const el=document.getElementById("err");el.hidden=false;el.textContent="The demo account could not be opened. Please try again."}}
+for(const id of["demo","demo2"])document.getElementById(id).addEventListener("click",e=>enter(e.currentTarget));
+</script></body></html>

@@ -59,7 +59,7 @@ def health():
     return {
         "ok": True,
         "build_commit": os.environ.get("VERCEL_GIT_COMMIT_SHA"),
-        "storage": bool(os.environ.get("BLOB_READ_WRITE_TOKEN")),
+        "storage": bool(os.environ.get("STORE_URL")),
         "valio": bool(os.environ.get("VALIO_API_KEY")),
         "gemini": bool(os.environ.get("GEMINI_API_KEY")),
     }
@@ -70,7 +70,24 @@ def samples():
     return FileResponse(ROOT / "public" / "samples.html")
 
 
+def page(name):
+    from fastapi.responses import HTMLResponse
+    from chefagent.portal import SITE
+
+    html = (ROOT / "public" / name).read_text().replace("https://valio-menu-to-delivery.vercel.app", SITE)
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=86400"})
+
+
 @app.get("/")
+def landing():
+    return page("landing.html")
+
+
+@app.get("/how-it-works")
+def how():
+    return page("how.html")
+
+
 @app.get("/dashboard")
 @app.get("/orders")
 @app.get("/orders/{order_id}")

@@ -48,9 +48,28 @@ class KitchenScopeMiddleware:
                 {'error': 'Use a valid test kitchen run ID.'}, status_code=400
             )(scope, receive, send)
         identity = 'test-' + run if run else 'aurora'
-        # Public connectors always default to Aurora; their caller has no browser
-        # cookie. Explicit test-run headers isolate automated outside clients too.
-        if not run and not scope['path'].startswith('/mcp'):
+        if scope['path'].startswith('/mcp'):
+            # Outside agents carry a per-account bearer token. No token, no door.
+            if req.method == 'OPTIONS':
+                return await self.app(scope, receive, send)
+            from . import portal
+            auth = req.headers.get('authorization', '')
+            token = auth[7:].strip() if auth.lower().startswith('bearer ') else req.query_params.get('token', '')
+            account = portal.token_account(token)
+            ok = False
+            if account:
+                with kitchen_scope(account):
+                    try:
+                        ok = portal.token_valid(token)
+                    except Exception:
+                        return await JSONResponse({'error': 'Valio is unavailable. Please try again.'}, status_code=503)(scope, receive, send)
+            if not ok:
+                return await JSONResponse(
+                    {'error': 'unauthorized', 'error_description': 'Send your account token as "Authorization: Bearer <token>". Find it in the Valio Aimo portal under Settings, Connected assistants.'},
+                    status_code=401, headers={'WWW-Authenticate': 'Bearer realm="Valio Aimo MCP"'},
+                )(scope, receive, send)
+            identity = account
+        elif not run:
             try:
                 cookie = unseal(req.cookies.get('aurora_account', ''))
                 candidate = cookie.get('account_id', 'aurora')

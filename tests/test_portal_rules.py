@@ -9,7 +9,7 @@ def account(monkeypatch, tmp_path):
     monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
     monkeypatch.setenv("AURORA_LOCAL_DB", str(tmp_path / "account.sqlite"))
 
-    def ctx(rule):
+    def ctx(rule, state=None, pool=None):
         attrs = {
             n: copy.deepcopy(getattr(old, n))
             for n in [
@@ -21,6 +21,8 @@ def account(monkeypatch, tmp_path):
                 "DELIVERIES",
             ]
         }
+        for role, amount in (pool or {}).items():
+            attrs["STOCK"][role] = attrs["STOCK"].get(role, 0) + amount
         attrs["KITCHEN"]["policy"] = {
             "free_from": rule["allergens"],
             "strict_may_contain": True,
@@ -244,12 +246,9 @@ def test_external_draft_is_indexed_for_chef_review(account):
         for d in entries
     )
     placed = account.place(o["draft_id"], assistant=True)
-    assert (
-        next(
-            d for d in account.ledger()[0]["drafts"] if d["draft_id"] == o["draft_id"]
-        )["status"]
-        == "Placed"
-    )
+    book = account.ledger()[0]
+    assert not any(d["draft_id"] == o["draft_id"] for d in book["drafts"])
+    assert book["orders"][0]["order_number"] == placed["order_number"]
 
 
 def test_mcp_rule_errors_tell_the_assistant_why_it_needs_a_chef(account):

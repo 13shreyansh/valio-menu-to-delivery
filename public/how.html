@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#FFFFFF"><title>How it works · Valio Aimo ordering</title><meta name="description" content="The interface and operating model: MCP tools, open standards, what the agent decides alone, what needs a person, assumptions and next steps."><link rel="icon" href="data:,"><link rel="preload" href="/fonts/hanken-grotesk-latin-600.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/fonts/hanken-grotesk-latin-400.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="/site.css"></head><body>
+<div class="wrap"><header class="top"><a class="wordmark" href="/">Valio Aimo</a><nav><a href="/how-it-works" aria-current="page">How it works</a><a href="/#signin">Try the demo</a></nav></header>
+<div class="doc">
+<aside aria-label="On this page"><a href="#model">Operating model</a><a href="#agents">Tools for agents</a><a href="#standards">Open standards</a><a href="#authority">Who decides what</a><a href="#exceptions">Exceptions</a><a href="#audit">Audit trail</a><a href="#assumptions">Assumptions</a><a href="#next">Next steps</a></aside>
+<main>
+<h1>How a purchasing agent orders from Valio Aimo</h1>
+<p>This page describes the interface and the operating model: what an agent can see, what it may decide, what goes to a person, and what is still a mock.</p>
+
+<h2 id="model">Operating model</h2>
+<p>There is one ordering engine. The portal, Ask Valio and outside agents all call it, so the same request gives the same order and meets the same rules whichever door it comes through.</p>
+<ol>
+<li><b>Read the request.</b> A language model (Gemini) turns words, speech or a photo of a menu into a structured request: dishes and guests, or products and amounts, a day, and any guest diets. It reads Finnish, Swedish and English. It never sets a price, a quantity or a product.</li>
+<li><b>Work out the need.</b> Code multiplies the kitchen's recipes by guests, subtracts stock on hand and what is already ordered for the week, and rounds up to Valio's sales units. A dish with no kitchen recipe gets an assumed recipe, marked for the chef to check.</li>
+<li><b>Look up real offers.</b> Live calls to Valio Aimo's price and availability API for the buyer's customer number: fixed customer price, stock, available date and order-by time. Products are ranked by price per litre or kilogram among those that can deliver the full amount in time: best, better, good.</li>
+<li><b>Apply the buyer's rules.</b> Allergens, limits, swap rules. Anything outside the agent's authority becomes an approval for a named person.</li>
+<li><b>Place or hand over.</b> Within authority the order is placed. Otherwise it waits, with a review link. Price, stock and rules are checked again at the moment of placing.</li>
+</ol>
+
+<h2 id="agents">Tools for agents</h2>
+<p>The door is a Model Context Protocol server over Streamable HTTP at <code>/mcp/</code>. Every tool publishes a JSON Schema for its input and output and returns typed <code>structuredContent</code>, so any MCP client, or a plain HTTP client speaking JSON-RPC, can use it.</p>
+<div class="scroll"><table class="tbl"><thead><tr><th>Tool</th><th>What it does</th><th>Changes anything?</th></tr></thead><tbody>
+<tr><td><code>find_products</code></td><td>Catalogue search with the account's price, live stock, delivery day, order-by time, allergens, labels and CO2 per kg. Says why a product is not allowed.</td><td>No</td></tr>
+<tr><td><code>check_stock_and_prices</code></td><td>Live price and availability for up to 50 product codes on a delivery day.</td><td>No</td></tr>
+<tr><td><code>quote_products</code></td><td>Compares every matching product for a need (for example 1,000 L lactose-free milk by Monday) and ranks the offers, with pack maths and the reason any offer is ruled out.</td><td>No</td></tr>
+<tr><td><code>order_products</code></td><td>Orders by description or product code, quantity and deadline. Places within authority, or returns <code>needs_approval</code> with reasons and a review link.</td><td>Creates a draft; may place</td></tr>
+<tr><td><code>prepare_order</code></td><td>Prepares an order from dishes, guests and a day using the kitchen's recipes and stock.</td><td>Creates a draft</td></tr>
+<tr><td><code>place_order</code></td><td>Places a prepared draft after a fresh price, stock and rule check. Refuses if a person must approve.</td><td>Places</td></tr>
+<tr><td><code>order_status</code></td><td>Reads a draft or order: lines, totals, open approvals.</td><td>No</td></tr>
+</tbody></table></div>
+<pre><code>curl -X POST https://valio-menu-to-delivery.vercel.app/mcp/ \
+  -H "Authorization: Bearer $VALIO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+        "name":"order_products",
+        "arguments":{"items":[{"query":"lactose-free milk","quantity":1000,"unit":"l"}],
+                     "deliver_by":"Monday"}}}'</code></pre>
+<h3>Trust between the agent and Valio</h3>
+<ul>
+<li><b>Who is calling.</b> Each buyer account has its own bearer token, shown and replaceable in Settings, Connected assistants. No token, no access. The token fixes the customer number; an agent cannot name another customer.</li>
+<li><b>What the agent can trust.</b> Every price and stock figure in a result comes from a live Valio API call made for that request, with its time. The portal's "How this was decided" shows each call and its raw response.</li>
+<li><b>What the agent cannot do.</b> Approve for a person, change a rule, see another account, or negotiate a price. Text inside a request that tries any of these is ignored.</li>
+</ul>
+
+<h2 id="standards">Open standards</h2>
+<div class="scroll"><table class="tbl"><thead><tr><th>Standard</th><th>Used for</th></tr></thead><tbody>
+<tr><td>Model Context Protocol</td><td>The agent interface: tool discovery, JSON Schema inputs and outputs, Streamable HTTP transport. Works with Claude, ChatGPT and custom agents without a Valio-specific SDK.</td></tr>
+<tr><td>JSON-RPC 2.0 and JSON Schema</td><td>Wire format and typed results, so a non-MCP system can integrate with plain HTTP.</td></tr>
+<tr><td>OAuth 2.0 bearer tokens (RFC 6750)</td><td>Per-account access to the agent door.</td></tr>
+<tr><td>GS1 allergen codes</td><td>Allergen rules use each product's GS1 "contains" and "may contain" declarations from Valio's catalogue data, mapped to the 14 EU allergens.</td></tr>
+<tr><td>GS1 product and packaging data</td><td>Sales units, pack sizes and labels (for example lactose-free, organic, Finnish origin) come from the catalogue's GS1 attributes, cross-checked against Valio's comparison price.</td></tr>
+</tbody></table></div>
+
+<h2 id="authority">Who decides what</h2>
+<div class="scroll"><table class="tbl"><thead><tr><th>Decision</th><th>Agent alone</th><th>Needs a person</th></tr></thead><tbody>
+<tr><td>Quantities from recipes and guests</td><td>Yes, with the maths shown</td><td>If the recipe was assumed</td></tr>
+<tr><td>Choosing between matching products</td><td>Yes: lowest price per unit that arrives in time</td><td>If the need is split or only part can be delivered</td></tr>
+<tr><td>Spend</td><td>Within the weekly and monthly limits, counted across all orders and channels</td><td>Over a limit, or a change above the buyer's threshold. Or refused, if the buyer chose "don't allow".</td></tr>
+<tr><td>Substitutes</td><td>Never silently</td><td>Always: the swap must keep the recipe working and add no allergen</td></tr>
+<tr><td>Allergens</td><td>Never orders a banned product</td><td>A requested dish that breaks a rule, or guests with a diet</td></tr>
+<tr><td>Larger pack to save money</td><td>No</td><td>Yes, with the saving per litre and the use-by rule</td></tr>
+<tr><td>Changing rules or approving</td><td>Never</td><td>Only the account's people, in the portal</td></tr>
+</tbody></table></div>
+
+<h2 id="exceptions">Exceptions</h2>
+<ul>
+<li><b>Late or missing stock.</b> The product is ruled out with the reason; the next best offer is proposed, or a recipe-safe swap goes to the chef.</li>
+<li><b>Partial availability.</b> The need is filled from the cheapest products first and the split is shown for approval; any shortfall is stated in litres or kilograms.</li>
+<li><b>Order-by time passed.</b> The product cannot be ordered for that delivery; the result says when it closed.</li>
+<li><b>Edits after approval.</b> An approval covers exact products, quantities and prices. Any change reopens it.</li>
+<li><b>Day outside the ordering week.</b> Valio says so and asks for a possible day rather than guessing.</li>
+<li><b>Prices move before placing.</b> Everything is re-quoted at placing; if an approval no longer matches, the order goes back for review.</li>
+</ul>
+
+<h2 id="audit">Audit trail</h2>
+<p>Each order keeps a human-readable record: the request, every Valio call with its time and raw response, the rules applied, who approved what and when, and who placed it. The account log lists orders, approvals, withdrawn approvals, rule changes, token changes and refused agent attempts. Both the buyer and Valio can read the same record.</p>
+
+<h2 id="assumptions">Assumptions</h2>
+<ul>
+<li><b>Synthetic data.</b> Catalogue, prices, availability and order-by times are Valio Aimo's Junction 2026 mock, queried live. Nothing here is production data.</li>
+<li><b>No order endpoint.</b> Valio's mock has no order API, so a placed order is stored on the account as a demo order and nothing ships. The confirmation says so.</li>
+<li><b>Sample kitchen.</b> Hotel Aurora's menu, recipes, bookings, stock and past orders are authored account records. In production they would come from the buyer's menu-planning or stock system.</li>
+<li><b>One ordering week.</b> The demo plans week 47 (16 to 22 November 2026) with deliveries on Monday, Wednesday and Friday.</li>
+<li><b>Fixed prices.</b> Orders use the customer's fixed price. There is no negotiation or quote step.</li>
+<li><b>Assumed recipes.</b> For a dish the kitchen has not recorded, the model proposes a recipe and code maps it to products. It is always marked and always needs a person's OK.</li>
+<li><b>Token in place of full OAuth.</b> A per-account bearer token stands in for an OAuth 2.1 client-credentials flow.</li>
+</ul>
+
+<h2 id="next">Next steps to production</h2>
+<ol>
+<li>Connect the order step to Valio Aimo's real order API, with idempotency keys and order status callbacks.</li>
+<li>Replace the token with OAuth 2.1 and scoped permissions per agent (read, quote, order up to a limit).</li>
+<li>Sign price and availability responses (for example JWS over the response body) so a buyer's agent can verify Valio's claims offline.</li>
+<li>An approval webhook, so the buyer's own system can route sign-off to the right person.</li>
+<li>Read menus, recipes and stock from the buyer's kitchen systems instead of account records.</li>
+<li>Use Valio's delivery-reliability and carbon-footprint data in ranking as buyer-set preferences, not only as shown attributes.</li>
+<li>Rate limits, anomaly alerts on agent spend, and a Valio-side view of the same audit log.</li>
+</ol>
+</main></div></div>
+<footer class="foot"><div class="wrap">Built for Valio Aimo's Trusted Trade Agents challenge, Junction 2026. <a href="/">Back to the start</a></div></footer>
+</body></html>

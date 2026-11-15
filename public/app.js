@@ -33,6 +33,12 @@ const time = (v) =>
         { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Helsinki" },
       )
     : "Time to confirm";
+const num = (n) =>
+  Number(n ?? 0).toLocaleString("en-GB", { maximumFractionDigits: 2 });
+const U = (u) => (u === "l" || u === "L" ? "L" : u === "pcs" ? "packs" : u || "");
+const packLabel = (r) =>
+  `${r.sales_unit === "KI" ? "Case of " : ""}${num(r.pack)} ${U(r.unit)}`;
+let pendingChanges = 0;
 const btn = (label, action, cls = "", attrs = "") =>
   `<button class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;
 let S = {
@@ -119,6 +125,21 @@ function navigate(path) {
   )
     refreshAccount();
   if (path === "/catalogue" && !S.catalogueLoaded) loadCatalogue();
+  if (path === "/dashboard" && S.order?.status === "placed") {
+    // The placed order lives in Orders. The dashboard shows what is still open.
+    S.order = null;
+    render();
+    api("/account")
+      .then((a) => {
+        S.account = a;
+        return ensureDraft();
+      })
+      .then(render)
+      .catch((e) => {
+        S.error = e.message;
+        render();
+      });
+  }
 }
 async function refreshAccount() {
   try {
@@ -142,8 +163,11 @@ async function ensureDraft() {
   if (id) {
     try {
       S.order = await api("/drafts/" + id);
-      localStorage.setItem(draftStorageKey(), S.order.draft_id);
-      return;
+      if (S.order.status !== "placed") {
+        localStorage.setItem(draftStorageKey(), S.order.draft_id);
+        return;
+      }
+      localStorage.removeItem(draftStorageKey());
     } catch {
       localStorage.removeItem(draftStorageKey());
     }
@@ -152,10 +176,6 @@ async function ensureDraft() {
   localStorage.setItem(draftStorageKey(), S.order.draft_id);
 }
 async function boot() {
-  if (S.path === "/") {
-    render();
-    return;
-  }
   render();
   try {
     S.account = await api("/account");
@@ -177,17 +197,13 @@ async function boot() {
       }
     }
   } catch (e) {
-    S.error = e.message;
-    S.path = "/";
-    history.replaceState({}, "", "/");
-    render();
+    location.replace(
+      "/?next=" + encodeURIComponent(location.pathname) + "#signin",
+    );
   }
 }
 function table(head, rows, cls = "") {
   return `<div class="table-wrap"><table class="table ${cls}"><thead><tr>${head.map((h, i) => `<th class="${/Total|price/.test(h) ? "money" : ""}">${h}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="${head.length}" class="empty">No orders in this view.</td></tr>`}</tbody></table></div>`;
-}
-function start() {
-  return `<div class="start"><section class="card signin"><div class="wordmark">Valio Aimo</div><h2>Sign in to order for your kitchen</h2>${btn("Continue with company account", "company", "primary")}${S.companyNote ? `<p class="note">Company sign-in is set up by your Valio contact</p>` : ""}<hr>${btn("Try the demo account (Hotel Aurora)", "login", "link")}<footer class="tiny">Prices and stock come live from Valio's system.</footer>${S.error ? `<p class="error" role="alert">${esc(S.error)}</p>` : ""}</section></div>`;
 }
 function title() {
   if (S.readOrder) return "Order " + S.readOrder.order_number;
@@ -199,11 +215,6 @@ function title() {
   return nav.find((n) => n[1] === S.path)?.[0] || "Dashboard";
 }
 function render() {
-  if (S.path === "/") {
-    $("#app").innerHTML = start();
-    document.body.className = "";
-    return;
-  }
   const active = S.path.startsWith("/settings")
     ? "/settings/rules"
     : S.path.startsWith("/orders")
@@ -213,7 +224,7 @@ function render() {
     (S.drawer ? "has-drawer " : "") +
     (S.drawer === "receipt" ? "has-receipt" : "");
   $("#app").innerHTML =
-    `<aside class="sidebar ${S.menu ? "open" : ""}"><div class="brand"><div class="wordmark">Valio Aimo</div><div class="tiny">${esc(S.account?.name || "Hotel Aurora")}</div></div><nav>${nav.map(([label, path, ic]) => `<a class="nav-item ${active === path ? "current" : ""}" href="${path}" data-nav="${path}">${icon(ic, "nav-icon")}${label}</a>`).join("")}</nav>${S.accountMenu ? btn(icon("log-out") + "Sign out", "logout", "ghost") : ""}<button class="account-row" data-action="account-menu"><span class="avatar">SV</span><span>Sanna Virtanen<span class="tiny" style="display:block">Head chef</span></span></button></aside><div class="workspace"><header class="topbar"><h1>${esc(title())}</h1><span class="wordmark mobile-brand">Valio Aimo</span><div class="top-actions">${btn(icon("mic") + '<span class="ask-label">Ask Valio</span>', "ask", "secondary ask-open", 'aria-label="Ask Valio"')}${btn(icon("bell") + (unread() ? '<i class="unread"></i>' : ""), "bell", "icon-btn bell", 'aria-label="Account events"')}${btn(icon("menu"), "menu", "icon-btn mobile-menu", 'aria-label="Open menu"')}</div></header><main><h1 class="mobile-title">${esc(title())}</h1>${S.error ? `<div role="alert" class="error">${esc(S.error)}</div>` : ""}${!S.order || !S.account ? '<div class="skeleton" aria-label="Loading account"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>' : page()}</main>${footer()}</div>${S.drawer ? drawer() : ""}${S.bell ? events() : ""}${S.why ? why() : ""}${S.invoice ? invoice() : ""}`;
+    `<aside class="sidebar ${S.menu ? "open" : ""}"><div class="brand"><div class="wordmark">Valio Aimo</div><div class="tiny">${esc(S.account?.name || "Hotel Aurora")}</div></div><nav>${nav.map(([label, path, ic]) => `<a class="nav-item ${active === path ? "current" : ""}" href="${path}" data-nav="${path}">${icon(ic, "nav-icon")}${label}</a>`).join("")}</nav>${S.accountMenu ? btn(icon("log-out") + "Sign out", "logout", "ghost") : ""}<button class="account-row" data-action="account-menu"><span class="avatar">SV</span><span>Sanna Virtanen<span class="tiny" style="display:block">Head chef</span></span></button></aside><div class="workspace"><header class="topbar"><h1>${esc(title())}</h1><span class="wordmark mobile-brand">Valio Aimo</span><div class="top-actions">${btn(icon("mic") + '<span class="ask-label">Ask Valio</span>', "ask", "secondary ask-open", 'aria-label="Ask Valio"')}${btn(icon("bell") + (unread() ? '<i class="unread"></i>' : ""), "bell", "icon-btn bell", 'aria-label="Account events"')}${btn(icon("menu"), "menu", "icon-btn mobile-menu", 'aria-label="Open menu"')}</div></header><main><h1 class="mobile-title">${esc(title())}</h1>${S.error && S.drawer !== "ask" ? `<div role="alert" class="error">${esc(S.error)}</div>` : ""}${!S.order || !S.account ? '<div class="skeleton" aria-label="Loading account"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>' : page()}</main>${footer()}</div>${S.drawer ? drawer() : ""}${S.bell ? events() : ""}${S.why ? why() : ""}${S.invoice ? invoice() : ""}`;
 }
 function unread() {
   return S.account?.events.some(
@@ -235,9 +246,10 @@ function page() {
   return dashboard();
 }
 function budget(o) {
-  const max = Math.max(o.total, o.budget) * 1.04,
+  const used = (o.week_placed || 0) + o.total;
+  const max = Math.max(used, o.budget) * 1.04,
     limit = (o.budget / max) * 100;
-  return `<div class="budget" aria-label="${money(o.total)} of ${money(o.budget)} weekly budget"><i class="budget-fill" style="width:${(Math.min(o.total, o.budget) / max) * 100}%"></i><i class="budget-over" style="width:${(Math.max(0, o.total - o.budget) / max) * 100}%"></i><i class="budget-tick" style="left:${limit}%"></i></div>`;
+  return `<div class="budget" aria-label="${money(used)} of ${money(o.budget)} weekly limit"><i class="budget-fill" style="width:${(Math.min(used, o.budget) / max) * 100}%"></i><i class="budget-over" style="width:${(Math.max(0, used - o.budget) / max) * 100}%"></i><i class="budget-tick" style="left:${limit}%"></i></div>`;
 }
 const stageNames = [
   "Reading your recipes",
@@ -248,18 +260,25 @@ const stageNames = [
   "Checking your budget",
 ];
 function checklistLabel(i, event) {
+  const weekday = event.date
+    ? new Date(event.date + "T12:00:00").toLocaleDateString("en-GB", {
+        weekday: "long",
+      })
+    : "delivery";
+  if (event.kind === "products")
+    return [
+      "Reading your request",
+      "Finding matching products",
+      `Checking ${weekday} stock and order-by times at Valio`,
+      "Comparing prices and pack sizes",
+      "Checking your kitchen rules",
+      "Checking your limits",
+    ][i];
   if (i === 1)
     return event.covers
       ? `Scaling to ${event.covers} guests`
       : S.steps[1]?.label || "Scaling your recipes";
-  if (i === 2) {
-    const day = event.date
-      ? new Date(event.date + "T12:00:00").toLocaleDateString("en-GB", {
-          weekday: "long",
-        })
-      : "delivery";
-    return `Checking ${day} stock at Valio`;
-  }
+  if (i === 2) return `Checking ${weekday} stock at Valio`;
   if (i === 4)
     return (
       "Checking allergens: " +
@@ -288,14 +307,17 @@ function dashboard() {
     timeZone: "Europe/Helsinki",
   });
   const pending = o.pending;
+  const count = o.rows.filter((r) => r.units > 0).length;
+  const done = !count && o.week_placed > 0;
   const heading = S.working
     ? "Updating next week's order"
-    : o.status === "placed"
-      ? "Next week's order is placed"
+    : done
+      ? "Week 47 is ordered"
       : pending
-        ? `Next week's order needs ${pending} OKs`
+        ? `Next week's order needs ${pending} OK${pending > 1 ? "s" : ""}`
         : "Next week's order is ready";
-  return `<div class="subline">${stamp} · ordering for week 47</div><div class="dashboard-grid"><section class="card order-card"><div class="between"><h2>${heading}</h2><span class="pill ${S.working ? "" : pending ? "warn" : "ok"}">${S.working ? "Updating…" : o.status === "placed" ? "Placed" : pending ? `${pending} to approve` : "Ready to send"}</span></div><p class="prepared">Prepared from your menu, ${S.account.bookings.reduce((n, b) => n + b.covers, 0)} bookings and current stock.</p><p class="totals"><span data-total="${o.total}">${o.rows.filter((r) => r.units > 0).length} products · ${o.deliveries.length} deliveries · <span id="animated-total">${money(o.total)}</span></span> of your ${money(o.budget)} weekly budget</p>${budget(o)}${S.working ? checklist() : o.deliveries.map(deliveryMini).join("")}${o.request && !S.working ? `<p class="change-summary">${summary(o)}</p>` : ""}<div class="row order-actions">${btn("Review order", "review", "primary", S.working ? "disabled" : "")}${btn("Change something", "ask", "ghost", o.status === "placed" ? "disabled" : "")}</div></section><section class="card summary-card"><h3>This week and month</h3>${summaryRows(o)}</section></div><section class="recent"><h3>Recent orders</h3>${orderTable(S.account.orders.slice(0, 5), true)}</section>`;
+  const guests = S.account.bookings.reduce((n, b) => n + b.covers, 0);
+  return `<div class="subline">${stamp} · ordering for week 47</div><div class="dashboard-grid"><section class="card order-card"><div class="between"><h2>${heading}</h2><span class="pill ${S.working ? "" : done ? "ok" : pending ? "warn" : "ok"}">${S.working ? "Updating…" : done ? "Placed" : pending ? `${pending} to approve` : "Ready to send"}</span></div><p class="prepared">${done ? "Everything your menu needs is ordered or in stock. Ask Valio if plans change." : o.source === "Aurora Group assistant" ? "Prepared by Aurora Group assistant, on top of your standing week." : `Prepared from your menu, ${guests} booked guests and current stock.`}</p><p class="totals">${done ? `<span>${money(o.week_placed)} placed</span>` : `<span data-total="${o.total}">${count} product${count === 1 ? "" : "s"} · ${o.deliveries.length} deliver${o.deliveries.length === 1 ? "y" : "ies"} · <span id="animated-total">${money(o.total)}</span></span>${o.week_placed ? ` + ${money(o.week_placed)} already placed,` : ""}`} of your ${money(o.budget)} weekly limit</p>${budget(o)}${S.working ? checklist() : o.deliveries.map(deliveryMini).join("")}${o.request && !S.working ? `<p class="change-summary">${summary(o)}</p>` : ""}<div class="row order-actions">${done ? btn("View orders", "orders", "primary") : btn("Review order", "review", "primary", S.working ? "disabled" : "")}${btn(done ? "Order something more" : "Change something", "ask", "ghost")}</div></section><section class="card summary-card"><h3>This week and month</h3>${summaryRows(o)}</section></div><section class="recent"><h3>Recent orders</h3>${orderTable(S.account.orders.slice(0, 5), true)}</section>`;
 }
 function eventName(label, day) {
   const weekday = day
@@ -311,10 +333,32 @@ function eventName(label, day) {
     ? name[0].toUpperCase() + name.slice(1).toLowerCase()
     : name;
 }
+function weekdayOf(day) {
+  return day
+    ? new Date(day + "T12:00:00").toLocaleDateString("en-GB", {
+        weekday: "long",
+      })
+    : "";
+}
+function requestLabel(o) {
+  const r = o.reading;
+  if (!r) return "your kitchen change";
+  if (r.kind === "products" && !r.dishes?.length) return "your product request";
+  if (r.kind === "close") return `the ${weekdayOf(r.date)} closure`;
+  if (r.kind === "note") return "your guests' needs";
+  return `${weekdayOf(r.date)} ${esc(eventName(r.event, r.date).toLowerCase())}`;
+}
 function summary(o) {
-  const n = o.rows.filter((r) => r.change && r.units > 0).length;
+  const n = o.rows.filter((r) => r.change).length;
   const delta = o.total - (o.previous_total ?? o.baseline_total);
-  return `${delta >= 0 ? "Added" : "Removed"} ${n} products for ${o.wedding ? new Date(o.wedding.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long" }) + " " + esc(eventName(o.wedding.event, o.wedding.date).toLowerCase()) : "your kitchen change"} (${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}).`;
+  const amount = `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta))}`;
+  if (o.reading?.kind === "note")
+    return "Noted. Nothing was added to the order.";
+  const none = o.checks.find((c) => c.id.startsWith("line-none"));
+  if (none) return esc(none.title) + ".";
+  if (!n && Math.abs(delta) < 0.005)
+    return "This is already in your order. Nothing changed.";
+  return `${delta >= 0 ? "Added or changed" : "Removed or reduced"} ${n} product${n === 1 ? "" : "s"} for ${requestLabel(o)} (${amount}).`;
 }
 function summaryRows(o) {
   const cuts = o.deliveries
@@ -323,10 +367,19 @@ function summaryRows(o) {
     .sort();
   const cut = cuts[0];
   const left = cut ? Math.max(0, new Date(cut) - Date.now()) : 0;
-  const spent = S.account.orders
-    .filter((r) => r.placed_at.startsWith("2026-11"))
-    .reduce((n, r) => n + r.total, 0);
-  return `<div class="summary-row"><span>Order by</span><span>${cut ? `${date(cut).split(" ")[0]} ${time(cut)}<br><span class="tiny">${Math.floor(left / 3600000)} h ${Math.floor((left % 3600000) / 60000)} min left</span>` : "To confirm"}</span></div><div class="summary-row"><span>First delivery</span><span>${date(o.deliveries[0]?.date)}<br><span class="tiny">Arrival time to confirm</span></span></div><div class="summary-row"><span>Spent in November</span><span>${money(spent)} of ${money(o.rules.monthly_limit)}</span></div><div class="summary-row"><span>Left this month</span><span>${money(Math.max(0, o.rules.monthly_limit - spent))}</span></div>`;
+  const spent = o.month_spent ?? S.account.month_spent;
+  const monthly = o.monthly_limit ?? o.rules.monthly_limit;
+  return `<div class="summary-row"><span>Order by</span><span>${cut ? `${date(cut).split(" ")[0]} ${time(cut)}<br><span class="tiny">${left ? `${Math.floor(left / 3600000)} h ${Math.floor((left % 3600000) / 60000)} min left` : "Order-by time has passed"}</span>` : "To confirm"}</span></div><div class="summary-row"><span>First delivery</span><span>${date(o.deliveries[0]?.date)}<br><span class="tiny">Arrival time to confirm</span></span></div><div class="summary-row"><span>Placed for week 47</span><span>${money(o.week_placed || 0)} of ${money(o.budget)}</span></div><div class="summary-row"><span>Spent in November</span><span class="${spent > monthly ? "amber" : ""}">${money(spent)} of ${money(monthly)}</span></div><div class="summary-row"><span>Left this month</span><span>${money(Math.max(0, monthly - spent))}</span></div>`;
+}
+function orderNote(o) {
+  if (o.status === "Draft")
+    return o.placed_by === "Aurora Group assistant"
+      ? "Prepared by Aurora Group assistant" +
+          (o.pending ? " · needs your OK" : "")
+      : "";
+  if (o.historical) return "";
+  if (o.rule_note) return o.rule_note;
+  return "";
 }
 function orderTable(rows, recent = false) {
   return table(
@@ -343,7 +396,7 @@ function orderTable(rows, recent = false) {
     rows
       .map(
         (o) =>
-          `<tr class="clickable ${Date.now() - new Date(o.placed_at) < 3000 ? "new-order" : ""}" ${o.status === "Draft" ? `data-open-draft="${esc(o.draft_id)}"` : `data-open-order="${esc(o.order_number)}"`} tabindex="0"><td><a href="/orders/${o.status === "Draft" ? "draft-" + esc(o.draft_id) : esc(o.order_number)}" ${o.status === "Draft" ? `data-open-draft="${esc(o.draft_id)}"` : `data-open-order="${esc(o.order_number)}"`}>${esc(o.order_number)}</a></td><td><span class="placed-by">${o.placed_by === "Aurora Group assistant" ? icon("plug") : ""}${esc(o.placed_by)}</span>${o.placed_by === "Aurora Group assistant" ? (o.status === "Draft" ? '<span class="tiny">Prepared by Aurora Group assistant</span>' : '<span class="tiny">Placed by Aurora Group assistant · Within your rules</span>') : ""}</td><td>${recent ? (o.status === "Delivered" ? date(o.deliveries[o.deliveries.length - 1]?.date) : "Not delivered") : date(o.placed_at)}${recent ? "" : `<span class="tiny">${time(o.placed_at)}</span>`}</td><td>${recent ? o.products : o.deliveries.length}</td><td class="money">${money(o.total)}</td><td>${recent ? "" : `<span class="pill ${o.status === "Delivered" ? "" : "ok"}">${esc(o.status)}</span>`}</td></tr>`,
+          `<tr class="clickable ${Date.now() - new Date(o.placed_at) < 3000 ? "new-order" : ""}" ${o.status === "Draft" ? `data-open-draft="${esc(o.draft_id)}"` : `data-open-order="${esc(o.order_number)}"`} tabindex="0"><td><a href="/orders/${o.status === "Draft" ? "draft-" + esc(o.draft_id) : esc(o.order_number)}" ${o.status === "Draft" ? `data-open-draft="${esc(o.draft_id)}"` : `data-open-order="${esc(o.order_number)}"`}>${esc(o.order_number)}</a></td><td><span class="placed-by">${o.placed_by === "Aurora Group assistant" ? icon("plug") : ""}${esc(o.placed_by)}</span>${!recent && orderNote(o) ? `<span class="tiny">${esc(orderNote(o))}</span>` : ""}</td><td>${recent ? (o.status === "Delivered" ? date(o.deliveries[o.deliveries.length - 1]?.date) : "Not delivered") : date(o.placed_at)}${recent ? "" : `<span class="tiny">${time(o.placed_at)}</span>`}</td><td>${recent ? o.products : o.deliveries.length}</td><td class="money">${money(o.total)}</td><td>${recent ? `<span class="small muted">${esc(o.within_rules === false ? "Approved by Sanna" : o.within_rules ? "Within your rules" : "")}</span>` : `<span class="pill ${o.status === "Delivered" ? "" : o.status === "Draft" && o.pending ? "warn" : "ok"}">${esc(o.status === "Draft" && o.pending ? "Needs OK" : o.status)}</span>`}</td></tr>`,
       )
       .join(""),
   );
@@ -368,45 +421,75 @@ function ordersPage() {
   return `<div class="tabs">${["Drafts", "Placed", "Delivered"].map((t) => btn(t, "order-tab", S.tab === t ? "active" : "", `data-value="${t}"`)).join("")}</div>${orderTable(rows)}`;
 }
 function approvalTitle(c, o) {
+  if (c.title) return esc(c.title);
   if (c.kind === "swap") {
     const r = o.rows.find((r) => c.row_ids.includes(r.id));
     return `Swap salmon for ${esc(r?.name || "the available fish")}`;
   }
   if (c.kind === "pack") {
     const r = o.rows.find((r) => c.row_ids.includes(r.id));
-    return `Buy cream as ${r?.units} × ${r?.pack} L packs`;
+    return `Buy cream as ${r?.units} × ${num(r?.pack)} L packs`;
   }
-  if (c.id === "budget")
-    return `${money(o.total - o.budget)} over your ${money(o.budget)} weekly limit`;
   return esc(c.text);
 }
+const checkIcons = {
+  swap: "repeat-2",
+  pack: "package",
+  budget: "wallet",
+  assumed: "clipboard-list",
+  diet: "users",
+  duplicate: "copy",
+};
 function approval(c, o) {
   if (c.approved)
-    return `<div class="approval approved" data-check="${esc(c.id)}">${icon("check")}<span class="approval-copy">${approvalTitle(c, o)}: approved by Sanna · ${esc(c.approved_at)}</span>${btn("Undo", "unapprove", "link", `data-value="${esc(c.id)}"`)}</div>`;
-  return `<div class="approval" data-check="${esc(c.id)}">${icon(c.kind === "swap" ? "repeat-2" : c.kind === "pack" ? "package" : c.kind === "budget" ? "wallet" : "circle-alert")}<div class="approval-copy"><div class="approval-title">${approvalTitle(c, o)}</div><p>${esc(c.text)}</p>${c.reopened ? '<p class="reopened">You changed the quantity, so please check this again.</p>' : ""}</div><div class="approval-buttons">${c.kind === "gap" ? btn(c.row_ids.length ? "Restore quantity" : "Change menu", c.row_ids.length ? "restore" : "ask", "secondary", `data-value="${esc(c.row_ids[0] || "")}"`) : btn(c.kind === "budget" ? "Change order" : "Keep original", c.kind === "pack" ? "small-cream" : c.kind === "swap" ? "keep-original" : "change-order", "ghost")}${c.can_approve ? btn(c.kind === "budget" ? "Approve once" : "Approve", "approve", "primary", `data-value="${esc(c.id)}" ${S.busy ? "disabled" : ""}`) : ""}</div></div>`;
+    return `<div class="approval approved" data-check="${esc(c.id)}">${icon("check")}<span class="approval-copy">${approvalTitle(c, o)}: approved by ${esc(c.approved_by || "Sanna")} · ${esc(c.approved_at)}</span>${btn("Undo", "unapprove", "link", `data-value="${esc(c.id)}"`)}</div>`;
+  const body = c.title || c.kind === "swap" || c.kind === "pack";
+  const other =
+    c.kind === "gap"
+      ? c.remove_extra
+        ? btn("Remove product", "remove-extra", "secondary", `data-value="${esc(c.remove_extra)}"`)
+        : btn(c.row_ids.length ? "Restore quantity" : "Change with Ask Valio", c.row_ids.length ? "restore" : "ask", "secondary", `data-value="${esc(c.row_ids[0] || "")}"`)
+      : c.kind === "pack"
+        ? btn("Keep 1 L packs", "small-cream", "ghost")
+        : c.kind === "swap"
+          ? btn("Keep original", "keep-original", "ghost")
+          : c.kind === "budget"
+            ? btn("Change order", "change-order", "ghost")
+            : btn("Change with Ask Valio", "ask", "ghost");
+  return `<div class="approval" data-check="${esc(c.id)}">${icon(checkIcons[c.kind] || "circle-alert")}<div class="approval-copy"><div class="approval-title">${approvalTitle(c, o)}</div>${body ? `<p>${esc(c.text)}</p>` : ""}${c.reopened ? '<p class="reopened">The order changed after your OK, so please check this again.</p>' : ""}</div><div class="approval-buttons">${other}${c.can_approve ? btn(c.kind === "budget" ? "Approve once" : "Approve", "approve", "primary", `data-value="${esc(c.id)}"`) : ""}</div></div>`;
 }
 function eventTag(o) {
-  return o.wedding
-    ? "For " +
-        new Date(o.wedding.date + "T12:00:00").toLocaleDateString("en-GB", {
-          weekday: "long",
-        }) +
-        " " +
-        eventName(o.wedding.event, o.wedding.date).toLowerCase()
-    : "For kitchen change";
+  return "For " + requestLabel(o).replace(/^the /, "");
+}
+function rowTag(r, o) {
+  if (r.edited) return "Quantity changed by you";
+  if (r.assumed) return "Assumed recipe, please check";
+  if (r.requested)
+    return `You asked for ${num(r.requested.quantity)} ${U(r.requested.unit)} by ${date(r.requested.date)}`;
+  if (r.change === "Swapped") return r.change_reason;
+  if (r.role === "extra") return "Added from the catalogue";
+  return eventTag(o);
 }
 function orderPage(o, readonly = false) {
   const count = o.rows.filter((r) => r.units > 0).length;
   const changed = o.rows.filter((r) => r.change).length;
-  return `<div class="subline"><span>${o.deliveries.length} deliveries · ${count} products · ${readonly ? "Placed " + date(o.placed_at) : "Not sent to Valio yet"}</span>${btn("How this was decided", "receipt", "secondary")}</div>${!readonly && o.checks.length ? `<section class="approvals"><h3>Needs your OK (${o.pending})</h3><div class="approval-box">${o.checks.map((c) => approval(c, o)).join("")}</div></section>` : ""}${!readonly ? `<div class="filter" aria-label="Order products">${btn(`Changed (${changed})`, "filter", S.filter === "changed" ? "active" : "", 'data-value="changed"')}${btn(`All (${count})`, "filter", S.filter === "all" ? "active" : "", 'data-value="all"')}</div>` : '<div style="height:16px"></div>'}${o.deliveries
-    .map((d) => {
-      const rows = d.rows.filter(
-        (r) => readonly || S.filter === "all" || r.change,
-      );
-      if (!rows.length) return "";
-      return `<section class="delivery-section"><div class="day-header"><div><h3>${date(d.date, true)} · ${o.historical ? "delivered" : "arrival time to confirm"}</h3><p>${d.cutoff ? "Order by " + date(d.cutoff) + " " + time(d.cutoff) : o.historical ? "Order-by time was not recorded" : "Order-by time to confirm"}</p></div><span>${money(d.subtotal)}</span></div>${table(["Product", "Quantity", "Unit price", "Total", ""], rows.map((r) => `<tr data-row="${esc(r.id)}"><td class="product"><div class="product-name">${esc(r.name)}</div><span class="tiny">${r.pack} ${esc(r.unit)} · <span class="product-code">${esc(r.product_id)}</span>${r.previous_units !== null && r.previous_units !== undefined && r.previous_units !== r.units ? `<span class="was"><s>was ${r.previous_units}</s></span>` : ""}</span>${r.change ? `<span class="tag">${r.change === "Swapped" ? esc(r.change_reason) : esc(eventTag(o))}</span>` : ""}</td><td>${readonly ? r.units : `<div class="stepper">${btn("−", "qty", "", `aria-label="Less ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units - 1}" ${S.busy || r.units === 0 ? "disabled" : ""}`)}<span>${r.units}</span>${btn("+", "qty", "", `aria-label="More ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units + 1}" ${S.busy ? "disabled" : ""}`)}</div>`}</td><td class="money unit-price">${money(r.unit_price)}</td><td class="money">${money(r.total)}</td><td>${btn("Why?", "why", "link why " + (!r.change ? "unchanged" : ""), `data-value="${esc(r.id)}"`)}</td></tr>`).join(""), "order-table")}</section>`;
-    })
-    .join("")}`;
+  const notes = (o.notes || []).length
+    ? `<ul class="order-notes">${o.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`
+    : "";
+  return `<div class="subline"><span>${o.deliveries.length} deliver${o.deliveries.length === 1 ? "y" : "ies"} · ${count} products · ${readonly ? "Placed " + date(o.placed_at) + (o.placed_at && !o.historical ? " " + time(o.placed_at) + " by " + esc(o.placed_by) : "") : o.source === "Aurora Group assistant" ? "Prepared by Aurora Group assistant · not placed yet" : "Not placed yet"}</span>${btn("How this was decided", "receipt", "secondary")}</div>${readonly && o.rule_note ? `<p class="rule-note">${esc(o.rule_note)}</p>` : ""}${!readonly && o.checks.length ? `<section class="approvals"><h3>Needs your OK (${o.pending})</h3><div class="approval-box">${o.checks.map((c) => approval(c, o)).join("")}</div></section>` : ""}${!readonly ? notes : ""}${!readonly ? `<div class="filter" aria-label="Order products">${btn(`Changed (${changed})`, "filter", S.filter === "changed" ? "active" : "", 'data-value="changed"')}${btn(`All (${count})`, "filter", S.filter === "all" ? "active" : "", 'data-value="all"')}</div>` : '<div style="height:16px"></div>'}${
+    o.deliveries
+      .map((d) => {
+        const rows = d.rows.filter(
+          (r) => readonly || S.filter === "all" || r.change,
+        );
+        if (!rows.length) return "";
+        return `<section class="delivery-section"><div class="day-header"><div><h3>${date(d.date, true)} · ${o.historical ? "delivered" : "arrival time to confirm"}</h3><p>${d.cutoff ? "Order by " + date(d.cutoff) + " " + time(d.cutoff) : o.historical ? "Order-by time was not recorded" : "Order-by time to confirm"}</p></div><span>${money(d.subtotal)}</span></div>${table(["Product", "Quantity", "Unit price", "Total", ""], rows.map((r) => `<tr data-row="${esc(r.id)}"><td class="product"><div class="product-name">${esc(r.name)}</div><span class="tiny">${packLabel(r)} · <span class="product-code">${esc(r.product_id)}</span>${r.previous_units !== null && r.previous_units !== undefined && r.previous_units !== r.units ? `<span class="was"><s>was ${r.previous_units}</s></span>` : ""}</span>${r.change && !readonly ? `<span class="tag ${r.assumed ? "tag-warn" : ""}">${esc(rowTag(r, o))}</span>` : ""}</td><td>${readonly ? r.units : `<div class="stepper">${btn("−", "qty", "", `aria-label="Less ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units - 1}" ${r.units === 0 ? "disabled" : ""}`)}<input class="qty-input" type="number" inputmode="numeric" min="0" max="9999" step="1" value="${r.units}" aria-label="Packs of ${esc(r.name)}" data-qty="${esc(r.id)}">${btn("+", "qty", "", `aria-label="More ${esc(r.name)}" data-row-id="${esc(r.id)}" data-units="${r.units + 1}"`)}</div>`}</td><td class="money unit-price">${money(r.unit_price)}</td><td class="money">${money(r.total)}</td><td>${btn("Why?", "why", "link why " + (!r.change ? "unchanged" : ""), `data-value="${esc(r.id)}"`)}</td></tr>`).join(""), "order-table")}</section>`;
+      })
+      .join("") ||
+    (!readonly && S.filter === "changed"
+      ? `<p class="muted">Nothing has changed from the prepared order. ${btn("Show all products", "filter", "link", 'data-value="all"')}</p>`
+      : "")
+  }`;
 }
 function footer() {
   if (
@@ -419,29 +502,32 @@ function footer() {
   )
     return "";
   const o = S.order;
-  return `<div class="footer-bar"><div class="footer-total">Total ${money(o.total)}${o.total > o.budget ? `<span class="amber">${money(o.total - o.budget)} over weekly budget</span>` : ""}</div><div class="row">${o.pending ? `<span class="small muted">${o.pending} still need your OK</span>` : ""}${btn(S.busy ? "Checking…" : "Place order", "place", "primary", !o.can_place || S.busy || S.rulesSaving ? "disabled" : "")}</div></div>`;
+  const over = (o.week_placed || 0) + o.total - o.budget;
+  return `<div class="footer-bar"><div class="footer-total">Total ${money(o.total)}${over > 0 ? `<span class="amber">${money(over)} over weekly limit</span>` : ""}</div><div class="row">${o.pending ? `<span class="small muted">${o.pending} still need${o.pending === 1 ? "s" : ""} your OK</span>` : ""}${btn(S.busy ? "Checking live prices…" : "Place order", "place", "primary", !o.can_place || S.busy || S.rulesSaving || pendingChanges ? "disabled" : "")}</div></div>`;
 }
 function confirmation() {
   const o = S.order;
-  return `<section class="card confirmation">${icon("circle-check")}<h1>Order sent to Valio</h1><p class="muted">Order ${esc(o.order_number || o.confirmation?.order_number)}</p><div class="deliveries">${o.deliveries.map(deliveryMini).join("")}</div><p>You'll get a confirmation from Valio by email.</p><div class="row" style="margin-top:24px">${btn("View orders", "orders", "primary")}${btn("Dashboard", "dashboard", "ghost")}</div><p class="tiny">Demo account: no real order was placed.</p></section>`;
+  return `<section class="card confirmation">${icon("circle-check")}<h1>Order ${esc(o.order_number || o.confirmation?.order_number)} is recorded</h1><p class="muted">${money(o.total)} · ${esc(o.rule_note || "")}</p><div class="deliveries">${o.deliveries.map(deliveryMini).join("")}</div><p class="demo-note">This is a demo account. Valio's Junction test system has no order endpoint, so the order is stored on your account and nothing is shipped. Prices and stock were checked live with Valio at ${time(o.placed_at)}.</p><div class="row" style="margin-top:24px">${btn("View orders", "orders", "primary")}${btn("Dashboard", "dashboard", "ghost")}</div></section>`;
 }
 function catalogue() {
-  return `<form class="search-form" id="catalogue-search"><input name="q" aria-label="Search products or codes" placeholder="Search products or codes" value="${esc(S.catalogueQuery)}">${btn("Search", "search", "secondary", S.busy ? "disabled" : "")}</form>${!S.catalogueLoaded ? '<div class="skeleton" aria-label="Loading catalogue"></div>' : table(["Product", "Pack", "Code", "Price per pack", "Per kg/L", "Stock date", ""], S.catalogue.map((p) => `<tr><td>${esc(p.name_fi || p.name)}</td><td>${p.pack || "—"} ${esc(p.pack_dim || p.sales_unit)}</td><td class="product-code">${esc(p.id)}</td><td class="money">${money(p.unit_price)}</td><td class="money">${p.comparison_price ? money(p.comparison_price) : "—"}</td><td>${date(p.availability.available_date)}<span class="tiny">${p.allowed ? "Available" : "Not within your rules or cut-off"}</span></td><td>${btn("Add to order", "add", "secondary", `data-value="${esc(p.id)}" ${!p.allowed || S.busy ? "disabled" : ""}`)}</td></tr>`).join(""))}${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
+  return `<form class="search-form" id="catalogue-search"><input name="q" aria-label="Search products or codes" placeholder="Search products or codes, for example lactose-free milk" value="${esc(S.catalogueQuery)}">${btn("Search", "search", "secondary", S.busy ? "disabled" : "")}</form>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)} ${btn("Review order", "review", "link")}</p>` : ""}${!S.catalogueLoaded ? '<div class="skeleton" aria-label="Loading catalogue"></div>' : table(["Product", "Pack", "Code", "Price per pack", "Per kg or L", "Delivery", ""], S.catalogue.map((p) => `<tr class="${p.allowed ? "" : "unavailable"}"><td>${esc(p.name_fi || p.name)}</td><td>${packLabel({ pack: p.pack, unit: p.pack_dim, sales_unit: p.sales_unit })}</td><td class="product-code">${esc(p.id)}</td><td class="money">${money(p.unit_price)}</td><td class="money">${p.comparison_price ? money(p.comparison_price) : "—"}</td><td>${p.allowed ? date(p.delivery) : "Not available"}<span class="tiny">${p.allowed ? "In stock" : esc(p.reason)}</span></td><td>${btn("Add to order", "add", "secondary", `data-value="${esc(p.id)}" data-delivery="${esc(p.delivery || "")}" data-name="${esc(p.name_fi || p.name)}" ${!p.allowed || S.busy ? "disabled" : ""}`)}</td></tr>`).join(""))}`;
 }
 function deliveries() {
   const placed = S.account.orders.filter((o) => o.status === "Placed");
   const ds = placed.flatMap((o) =>
     o.deliveries.map((d) => ({ ...d, order: o.order_number })),
   );
-  const rows = ds.length
-    ? ds
-    : S.order.deliveries.map((d) => ({ ...d, order: "Week 47 · Not placed" }));
+  const mine = S.order.deliveries.map((d) => ({
+    ...d,
+    order: "Week 47 draft · not placed",
+  }));
+  const rows = [...ds, ...mine].sort((a, b) => a.date.localeCompare(b.date));
   return table(
     ["Day", "Arrival time", "Order by", "Products", "Total", "Order"],
     rows
       .map(
         (d) =>
-          `<tr><td>${date(d.date, true)}</td><td>To confirm</td><td>${d.cutoff ? date(d.cutoff) + " " + time(d.cutoff) : "Order-by time to confirm"}</td><td>${d.rows.length}</td><td class="money">${money(d.subtotal)}</td><td>${esc(d.order)}</td></tr>`,
+          `<tr><td>${date(d.date, true)}</td><td>To confirm</td><td>${d.cutoff ? date(d.cutoff) + " " + time(d.cutoff) : "Order-by time to confirm"}</td><td>${d.rows.filter((r) => r.units === undefined || r.units > 0).length}</td><td class="money">${money(d.subtotal)}</td><td>${esc(d.order)}</td></tr>`,
       )
       .join(""),
   );
@@ -479,12 +565,24 @@ function rulesView() {
   const stamp = `Changed by ${esc(r.changed_by)}, ${new Date(r.changed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
   const row = (label, control) =>
     `<div class="rule-row"><label>${label}<span class="tiny">${stamp}</span></label>${control}</div>`;
-  return `<section class="rule-section"><h3>Budget</h3>${row("Weekly limit", `<div class="row"><span>€</span><input type="number" min="1" step=".01" aria-label="Weekly limit" data-rule="weekly_limit" value="${r.weekly_limit}"></div>`)}${row("When an order goes over", `<select aria-label="When an order goes over" data-rule="over_limit"><option value="ask" ${r.over_limit === "ask" ? "selected" : ""}>Ask me first</option><option value="block" ${r.over_limit === "block" ? "selected" : ""}>Don't allow</option></select>`)}</section><section class="rule-section"><h3>Swaps</h3>${row("Ask me before any product swap", `<input class="toggle" type="checkbox" aria-label="Ask me before any product swap" data-rule="ask_swap" ${r.ask_swap ? "checked" : ""}>`)}${row("Only swap to products with the same or fewer allergens", `<input class="toggle" type="checkbox" aria-label="Only swap to products with the same or fewer allergens" data-rule="same_allergens" ${r.same_allergens ? "checked" : ""}>`)}</section><section class="rule-section"><h3>Allergens</h3><div class="chips">${r.allergens
-    .filter((a) => a !== "peanuts")
-    .map((a) => `<span class="chip">No ${esc(a)} (whole kitchen)</span>`)
-    .join("")}</div>${
+  const euro = (label, key) =>
+    row(
+      label,
+      `<div class="row"><span>€</span><input type="number" min="1" step=".01" aria-label="${label}" data-rule="${key}" value="${r[key]}"></div>`,
+    );
+  return `<section class="rule-section"><h3>Budget</h3>${euro("Weekly limit, all orders together", "weekly_limit")}${euro("Monthly limit, all orders together", "monthly_limit")}${row("When an order goes over a limit", `<select aria-label="When an order goes over a limit" data-rule="over_limit"><option value="ask" ${r.over_limit === "ask" ? "selected" : ""}>Ask me first</option><option value="block" ${r.over_limit === "block" ? "selected" : ""}>Don't allow</option></select>`)}</section><section class="rule-section"><h3>Swaps</h3>${row("Ask me before any product swap", `<input class="toggle" type="checkbox" aria-label="Ask me before any product swap" data-rule="ask_swap" ${r.ask_swap ? "checked" : ""}>`)}${row("Only swap to products with the same or fewer allergens", `<input class="toggle" type="checkbox" aria-label="Only swap to products with the same or fewer allergens" data-rule="same_allergens" ${r.same_allergens ? "checked" : ""}>`)}</section><section class="rule-section"><h3>Allergens</h3><div class="chips">${
+    r.allergens
+      .filter((a) => a !== "peanuts" || !r.allergens.includes("nuts"))
+      .map(
+        (a) =>
+          `<span class="chip">No ${esc(a)}${a === "nuts" && r.allergens.includes("peanuts") ? " or peanuts" : ""} (whole kitchen)<button class="chip-remove" data-action="allergen-remove" data-value="${esc(a)}" aria-label="Remove the no ${esc(a)} rule">${icon("x")}</button></span>`,
+      )
+      .join("") ||
+    '<span class="small muted">No kitchen-wide allergen rule.</span>'
+  }</div>${
     S.addAllergen
       ? `<select id="new-allergen" aria-label="Choose allergen">${[
+          "nuts",
           "milk",
           "egg",
           "fish",
@@ -502,17 +600,20 @@ function rulesView() {
           .map((a) => `<option>${a}</option>`)
           .join("")}</select> ${btn("Add", "allergen-confirm", "secondary")}`
       : btn("Add allergen", "allergen", "secondary")
-  }</section><section class="rule-section"><h3>Bigger changes</h3>${row("Ask me when an order grows by more than", `<div class="row"><span>€</span><input type="number" min="1" step=".01" aria-label="Ask me when an order grows by more than" data-rule="growth_limit" value="${r.growth_limit}"></div>`)}</section><section class="rule-section"><h3>Who can order</h3>${S.account.team.map((t) => `<div class="rule-row"><span>${esc(t.name)}<span class="tiny" style="display:block">${esc(t.role)}</span></span><span class="small muted">${esc(t.permission)}</span></div>`).join("")}</section><p class="small muted">These rules apply to every order from your account, including ones made by a connected AI.</p>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
+  }<p class="small muted" style="margin-top:8px">Products that contain or may contain these are never ordered. Allergen data is each product's GS1 declaration in Valio's catalogue.</p></section><section class="rule-section"><h3>Bigger changes</h3>${euro("Ask me when an order grows by more than", "growth_limit")}</section><section class="rule-section"><h3>Who can order</h3>${S.account.team.map((t) => `<div class="rule-row"><span>${esc(t.name)}<span class="tiny" style="display:block">${esc(t.role)}</span></span><span class="small muted">${esc(t.permission)}</span></div>`).join("")}</section><p class="small muted">These rules apply to every order from your account: the portal, Ask Valio and connected assistants. Every rule change is written to the account log.</p>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
 }
 function connected() {
   const last = S.account.events.find((e) => e.by === "Aurora Group assistant");
-  return `<h2>Connect your own AI assistant</h2><p class="muted" style="margin-top:12px">Use Claude, ChatGPT or your company's own assistant to order from Valio. It follows the same ordering rules as your team.</p><div class="copy-row"><input readonly aria-label="MCP address" value="${esc(S.account.mcp_url)}">${btn(icon("copy") + "Copy", "copy", "secondary")}</div><h3>Claude</h3><ol class="steps"><li>Open Settings → Connectors → Add custom connector.</li><li>Name it Valio Aimo and paste the MCP address above.</li><li>Connect, then ask for dishes, guests and a delivery day.</li></ol><h3>ChatGPT</h3><ol class="steps"><li>Open Settings → Apps and enable developer mode in advanced settings.</li><li>Create an app with the MCP address above and no authentication.</li><li>Add it to a chat and ask for your kitchen's order.</li></ol><h3>Connected</h3><div class="connected-row">Aurora Group assistant<span class="tiny" style="display:block">${last ? "Last used " + time(last.at) : "Ready to connect"}</span></div>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
+  const token = S.account.mcp_token;
+  return `<h2>Connect your own AI assistant</h2><p class="muted" style="margin-top:12px">Your company's purchasing agent, Claude or ChatGPT can order from Valio through the open Model Context Protocol (MCP). It works inside the same ordering rules as your team and can never approve on your behalf.</p><h3>Address</h3><div class="copy-row"><input readonly aria-label="MCP address" value="${esc(S.account.mcp_url)}">${btn(icon("copy") + "Copy", "copy", "secondary", 'data-copy="url"')}</div><h3>Access token for Hotel Aurora</h3><div class="copy-row"><input readonly aria-label="Access token" value="${S.showToken ? esc(token) : esc(token.slice(0, 12)) + "••••••••••••"}">${btn(S.showToken ? "Hide" : "Show", "toggle-token", "secondary")}${btn(icon("copy") + "Copy", "copy", "secondary", 'data-copy="token"')}</div><p class="small muted" style="margin-top:8px">Send it as <code>Authorization: Bearer</code> with every call. Anyone with this token can order for Hotel Aurora within your rules. ${btn("Replace token", "regenerate-token", "link")}</p><h3>Claude or ChatGPT</h3><ol class="steps"><li>Add a custom connector (Claude: Settings → Connectors; ChatGPT: Settings → Apps, developer mode).</li><li>Paste your personal connector address: ${btn("Copy connector address", "copy", "link", 'data-copy="connector"')}. It carries your token, so keep it private.</li><li>Ask in plain words: “1,000 litres of lactose-free milk by Monday”, or dishes, guests and a day.</li></ol><h3>Your own agent</h3><p class="small muted">Seven tools, from find_products and quote_products to order_products and place_order. Each returns typed JSON with a published schema. <a href="/how-it-works">How it works</a></p><h3>Connected</h3><div class="connected-row">Aurora Group assistant<span class="tiny" style="display:block">${last ? "Last used " + date(last.at) + " " + time(last.at) : "Not used yet"}</span></div>${S.notice ? `<p class="status-note" role="status">${esc(S.notice)}</p>` : ""}`;
 }
 function team() {
   return `<h2>Team</h2><div style="height:20px"></div>${table(["Name", "Role", "Permission"], S.account.team.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(t.role)}</td><td>${esc(t.permission)}</td></tr>`).join(""))}`;
 }
 function kitchenProfile() {
-  return `<h2>Hotel Aurora</h2><p class="muted" style="margin-top:12px">Helsinki · Customer HC-1001</p><p class="small muted" style="margin-top:16px">Hotel Aurora is a sample kitchen account. Its menus, recipes, bookings, stock and past quantities are account records. Product names, prices, availability and cut-offs come from Valio.</p><section class="card"><h3>Bookings</h3>${S.account.bookings.map((b) => `<div class="summary-row"><span>${date(b.date)}</span><span>${b.covers} guests</span></div>`).join("")}</section><section class="card"><h3>Recipes and menu</h3>${Object.entries(
+  const names = S.account.ingredient_names || {},
+    units = S.account.ingredient_units || {};
+  return `<h2>Hotel Aurora</h2><p class="muted" style="margin-top:12px">Helsinki · Customer HC-1001</p><p class="small muted" style="margin-top:16px">Hotel Aurora is a sample kitchen account. Its menus, recipes, bookings, stock and past quantities are account records. Product names, prices, availability and order-by times come from Valio.</p><section class="card"><h3>Booked guests</h3>${S.account.bookings.map((b) => `<div class="summary-row"><span>${date(b.date)}</span><span>${b.covers} guests</span></div>`).join("")}</section><section class="card"><h3>Recipes and menu</h3>${Object.entries(
     S.account.recipes,
   )
     .map(
@@ -522,7 +623,7 @@ function kitchenProfile() {
         )
           .map(
             ([name, amount]) =>
-              `<p class="small muted">${esc(name)} · ${amount} g/ml per guest</p>`,
+              `<p class="small muted">${esc(names[name] || name)} · ${amount} ${units[name] === "l" ? "ml" : "g"} per guest</p>`,
           )
           .join("")}</details>`,
     )
@@ -533,56 +634,99 @@ function kitchenProfile() {
   )
     .map(
       ([name, n]) =>
-        `<div class="summary-row"><span>${esc(name.replace("_", " "))}</span><span>${n} kg/L</span></div>`,
+        `<div class="summary-row"><span>${esc(names[name] || name.replace("_", " "))}</span><span>${n ? num(n) + " " + U(units[name] || "kg") : "None"}</span></div>`,
     )
     .join("")}</section>`;
 }
 function events() {
-  return `<section class="popover events" aria-label="Account events"><h3>Account events</h3>${
+  return `<section class="popover events" aria-label="Account log"><h3>Account log</h3>${
     S.account.events.length
       ? S.account.events
-          .slice(0, 10)
+          .slice(0, 14)
           .map(
             (e) =>
-              `<div class="event">${esc(e.text)}<p class="small muted">${money(e.total)} · ${esc(e.note)}</p><span class="tiny">${date(e.at)} · ${time(e.at)}</span></div>`,
+              `<div class="event">${e.link ? `<a href="${esc(e.link)}">${esc(e.text)}</a>` : esc(e.text)}<p class="small muted">${e.total !== null && e.total !== undefined ? money(e.total) + (e.note ? " · " : "") : ""}${esc(e.note || "")}</p><span class="tiny">${date(e.at)} · ${time(e.at)}</span></div>`,
           )
           .join("")
-      : '<p class="muted" style="margin-top:12px">Orders and account changes will appear here.</p>'
+      : '<p class="muted" style="margin-top:12px">Orders, approvals and rule changes will appear here.</p>'
   }</section>`;
 }
+function offers(o) {
+  const rows = o.rows.filter((r) => r.options && r.requested && r.units > 0);
+  if (!rows.length) return "";
+  const r = rows[0];
+  return `<div class="offers"><h3>Offers compared for ${num(r.requested.quantity)} ${U(r.requested.unit)} by ${date(r.requested.date)}</h3>${r.options
+    .slice(0, 5)
+    .map(
+      (x) =>
+        `<div class="offer ${rows.some((y) => y.product_id === x.product_id) ? "chosen" : ""}"><div><span class="offer-rank ${x.rank ? "" : "muted"}">${esc(x.rank || (x.status === "ok" ? "Also fits" : "Not possible"))}</span> ${esc(x.name)}</div><div class="small muted">${money(x.price_per_unit)}/${U(x.pack_unit)} · ${num(x.packs)} × ${num(x.pack)} ${U(x.pack_unit)} = ${money(x.total)}${x.note ? " · " + esc(x.note) : ""}</div></div>`,
+    )
+    .join(
+      "",
+    )}<p class="tiny">${r.compared} matching products checked live at Valio.</p></div>`;
+}
 function drawer() {
-  return S.drawer === "receipt"
-    ? receipt()
-    : `<aside class="drawer" role="complementary" aria-label="Ask Valio"><header class="drawer-header"><h3>Ask Valio</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close Ask Valio"')}</header><div class="drawer-body">${S.request ? `<div class="request-block">${esc(S.request)}<div class="tiny">${time(S.requestAt || new Date().toISOString())}</div></div>${S.order.reading && !S.question ? understood() : ""}${S.working ? '<div class="working"><i class="spinner"></i>Working on your order…</div>' : S.question ? `<p class="muted">${esc(S.question)}</p>` : S.order.reading ? `<div class="ask-result"><p>${summary(S.order)} ${S.order.pending} things need your OK.</p><div style="margin-top:16px">${btn("Review order", "review", "primary")}</div></div>` : ""}` : `<p class="muted">Tell Valio what's changing in your kitchen. Dishes and guests are enough.</p><p class="example">“Conference lunch Tuesday, 60 guests, one vegan option”</p><p class="example">“We're closed on Thursday”</p>`}</div><form class="composer" id="ask-form"><label class="sr-only" for="ask-input">Tell Valio what's changing</label><textarea id="ask-input" rows="3" placeholder="Tell Valio what's changing…" ${S.working || S.transcribing || S.micStarting ? "disabled" : ""}>${esc(S.input)}</textarea>${S.mediaName ? `<p class="small muted" style="margin-top:8px">${esc(S.mediaName)} ${btn("Remove", "remove-file", "link")}</p>` : ""}${S.transcribing ? `<p class="small muted">Reading your recording…</p>` : ""}${S.listening ? `<p class="small amber">Listening…</p><div class="meter"><i id="audio-level" style="width:${S.level}%"></i></div>` : ""}<div class="composer-actions">${btn(icon("paperclip") + "Add menu or photo", "attach", "attach", S.working ? "disabled" : "")}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="row" style="gap:8px">${btn(icon("mic"), "mic", `mic ${S.listening ? "listening" : ""}`, `aria-label="${S.listening ? "Stop recording" : "Start recording"}" ${S.working || S.micStarting || S.transcribing || S.busy ? "disabled" : ""}`)}${btn("Send", "send", "primary", S.working || S.listening || S.transcribing || S.micStarting ? "disabled" : "")}</div></div></form></aside>`;
+  if (S.drawer === "receipt") return receipt();
+  let body;
+  if (!S.request)
+    body = `<p class="muted">Tell Valio what's changing in your kitchen, or what you need. Dishes and guests are enough.</p><p class="example">“Wedding on Saturday, 120 guests. Salmon soup, whitefish with potatoes, lemon tart.”</p><p class="example">“I need 1,000 litres of lactose-free milk by Monday.”</p><p class="example">“Conference lunch Tuesday, 60 guests, one vegan option”</p><p class="example">“We're closed on Thursday”</p>`;
+  else
+    body = `<div class="request-block">${esc(S.request)}<div class="tiny">${time(S.requestAt || new Date().toISOString())}</div></div>${
+      S.working
+        ? '<div class="working"><i class="spinner"></i>Working on your order…</div>'
+        : S.error
+          ? `<div class="ask-question" role="alert"><h3>That didn't go through</h3><p>${esc(S.error)}</p><p class="small muted">Your order has not changed.</p></div>`
+          : S.question
+            ? `<div class="ask-question"><h3>Valio needs one detail</h3><p>${esc(S.question)}</p><p class="small muted">Answer below. Your order has not changed.</p></div>`
+            : S.asked && S.order.reading
+              ? `${understood()}${offers(S.order)}<div class="ask-result"><p>${summary(S.order)} ${S.order.pending ? `${S.order.pending} thing${S.order.pending === 1 ? " needs" : "s need"} your OK.` : "Nothing needs your OK."}</p><div style="margin-top:16px">${btn("Review order", "review", "primary")}</div></div>`
+              : ""
+    }`;
+  return `<aside class="drawer" role="complementary" aria-label="Ask Valio"><header class="drawer-header"><h3>Ask Valio</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close Ask Valio"')}</header><div class="drawer-body">${body}</div><form class="composer" id="ask-form"><label class="sr-only" for="ask-input">Tell Valio what's changing</label><textarea id="ask-input" rows="3" placeholder="Tell Valio what's changing…" ${S.working || S.transcribing || S.micStarting ? "disabled" : ""}>${esc(S.input)}</textarea>${S.mediaName ? `<p class="small muted" style="margin-top:8px">${esc(S.mediaName)} ${btn("Remove", "remove-file", "link")}</p>` : ""}${S.transcribing ? `<p class="small muted">Reading your recording…</p>` : ""}${S.listening ? `<p class="small amber">Listening…</p><div class="meter"><i id="audio-level" style="width:${S.level}%"></i></div>` : ""}<div class="composer-actions">${btn(icon("paperclip") + "Add menu or photo", "attach", "attach", S.working ? "disabled" : "")}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="row" style="gap:8px">${btn(icon("mic"), "mic", `mic ${S.listening ? "listening" : ""}`, `aria-label="${S.listening ? "Stop recording" : "Start recording"}" ${S.working || S.micStarting || S.transcribing || S.busy ? "disabled" : ""}`)}${btn("Send", "send", "primary", S.working || S.listening || S.transcribing || S.micStarting ? "disabled" : "")}</div></div></form></aside>`;
 }
 function understood() {
   const r = S.order.reading;
-  return `<div class="between"><h3>What Valio understood</h3>${btn(S.editing ? "Done" : "Edit", "edit-reading", "link")}</div>${[
-    [
-      "Event",
-      eventName(
-        r.event || S.order.wedding?.event,
-        r.date || S.order.wedding?.date,
-      ),
-    ],
-    ["Date", date(r.date || S.order.wedding?.date)],
-    ["Guests", r.covers],
-    [
-      "Dishes",
-      r.dishes
-        .map((d) => S.account.recipes[d.recipe]?.name || d.recipe)
-        .join(", "),
-    ],
-  ]
+  const menu = r.dishes?.length;
+  const fields = menu
+    ? [
+        ["Event", eventName(r.event, r.date)],
+        ["Date", date(r.date)],
+        ["Guests", r.covers],
+        [
+          "Dishes",
+          r.dishes
+            .map(
+              (d) =>
+                (d.name || S.account.recipes[d.recipe]?.name || d.recipe) +
+                (d.covers !== r.covers ? ` (${d.covers})` : ""),
+            )
+            .join(", "),
+        ],
+      ]
+    : r.kind === "close"
+      ? [["Closed", date(r.date)]]
+      : [];
+  (r.products || []).forEach((p) =>
+    fields.push(
+      ["Product", p.name],
+      ["Amount", `${num(p.quantity)} ${U(p.unit)}`],
+      ["Deliver by", date(r.date)],
+    ),
+  );
+  (r.dietary || []).forEach((d) => fields.push(["Guests' needs", d.label]));
+  const editable = menu && !(r.products || []).length;
+  return `<div class="between"><h3>What Valio understood</h3>${editable ? btn(S.editing ? "Done" : "Edit", "edit-reading", "link") : ""}</div>${fields
     .map(
       ([l, v]) =>
-        `<div class="field"><label>${l}</label>${S.editing ? `<input aria-label="${l}" data-reading-field="${l}" value="${esc(v)}">` : `<span>${esc(v)}</span>`}</div>`,
+        `<div class="field"><label>${l}</label>${S.editing && editable ? `<input aria-label="${l}" data-reading-field="${l}" value="${esc(v)}">` : `<span>${esc(v)}</span>`}</div>`,
     )
-    .join("")}`;
+    .join(
+      "",
+    )}${(r.assumptions || []).length ? `<div class="assumed-list"><span class="tiny">Valio assumed</span>${r.assumptions.map((a) => `<p class="small">${esc(a)}</p>`).join("")}</div>` : ""}`;
 }
 function callProducts(c, o) {
   const products = c.response?.products;
-  if (!Array.isArray(products)) return "";
+  if (!Array.isArray(products) || !c.path) return "";
   return products
     .map((p) => {
       const id = p.productId,
@@ -594,7 +738,7 @@ function callProducts(c, o) {
       const unit =
         p.comparisonPrice?.value !== undefined ? p.comparisonUnit : "pack";
       const available = p.scheduleLines?.[0]?.availableDate;
-      return `<p>${esc(name)} → product ${esc(id)}${price !== undefined ? ", " + money(price) + "/" + esc(unit || "pack") : ""}${available ? ", available " + date(available) : ""}</p>`;
+      return `<p class="small">${esc(name)} <span class="product-code">${esc(id)}</span>${price !== undefined ? " · " + money(price) + "/" + esc(U((unit || "pack").toLowerCase())) : ""}${available ? " · available " + date(available) : ""}</p>`;
     })
     .join("");
 }
@@ -605,33 +749,72 @@ function callSummary(c) {
     count === undefined ? "" : ` · ${count.toLocaleString("en-GB")} products`;
   const delivery = c.requested_date ? ` for ${date(c.requested_date)}` : "";
   if (c.path?.includes("products/download"))
-    return `Checked Valio's catalogue${products}`;
+    return `Loaded Valio's catalogue${products}`;
   if (c.path?.includes("delivery-reliability"))
-    return "Checked Valio's delivery history";
+    return "Loaded Valio's delivery history";
   if (c.path?.includes("carbon-footprint"))
-    return "Checked Valio's product footprint data";
-  if (c.source === "Gemini") return "Read your kitchen request";
-  const reused = c.method === "CACHE";
+    return "Loaded Valio's product footprint data";
+  if (c.source === "Gemini")
+    return c.purpose === "Product matching"
+      ? "Matched catalogue products to your request"
+      : "Read your request";
   if (c.path?.includes("availability"))
-    return `${reused ? "Used recent Valio stock checks" : "Checked stock at Valio"}${products}${delivery}`;
+    return `Live stock check at Valio${products}${delivery}`;
   if (c.path?.includes("price"))
-    return `${reused ? "Used recent Valio prices" : "Checked prices at Valio"}${products}${delivery}`;
+    return `Live price check at Valio${products}${delivery}`;
   return `Checked Valio product data${products}${delivery}`;
 }
 function receipt() {
   const o = S.readOrder || S.order;
-  return `<aside class="drawer receipt" aria-label="How this was decided"><header class="drawer-header"><h3>How this was decided</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close receipt"')}</header><div class="drawer-body"><h3>Your request</h3><p>${esc(o.request || "Prepare next week’s order from our connected menu, bookings and current stock.")}</p><span class="tiny">${time(o.request_at || o.quote_at)}</span><h3>What Valio checked</h3>${o.evidence.calls.map((c) => `<div class="receipt-entry"><p>${esc(callSummary(c))}${c.at ? " · " + time(c.at) : ""}</p>${callProducts(c, o)}<p class="tiny">${c.source === "Gemini" ? "Kitchen request" : "Valio product data"}${!c.at ? " · Check time was not recorded" : ""}</p><details><summary><span style="color:var(--blue)">Details</span></summary><pre>${esc(JSON.stringify({ request: c.request || { method: c.method, path: c.path, customer: c.customer, products: c.product_ids, date: c.requested_date }, response: c.response || { status: c.status, source: c.source, product_count: c.product_count }, checked_at: c.at, original_checks: c.origin_checked_at, timing_ms: c.duration_ms }, null, 2))}</pre></details></div>`).join("")}<h3>Rules applied</h3><p>Weekly limit ${money(o.budget)} → ${o.checks.some((c) => c.id === "budget") ? "asked Sanna" : "within limit"}</p><p class="small muted">No ${esc(o.rules.allergens.join(", "))} → ${o.rows.length} products checked</p>${o.checks.map((c) => `<p class="small muted">${c.kind === "swap" ? "Ask before swap" : c.kind === "pack" ? "Larger pack" : c.kind === "budget" ? "Spend approval" : "Delivery check"} → ${c.approved ? "OK’d " + esc(c.approved_at) : "needs your OK"}</p>`).join("")}</div></aside>`;
+  const calls = S.receipt?.calls;
+  const stamp = (v) => (v ? `${date(typeof v === "number" ? new Date(v * 1000).toISOString() : v)} ${time(v)}` : "");
+  const approvals = o.approvals
+    ? o.approvals.map((a) => `<p class="small muted">${esc(a.label)} → approved by ${esc(a.by)} at ${esc(a.at)}</p>`)
+    : (o.checks || []).map((c) => `<p class="small muted">${approvalTitle(c, o)} → ${c.approved ? `approved by ${esc(c.approved_by || "Sanna")} at ${esc(c.approved_at)}` : c.can_approve ? "waiting for your OK" : "blocked by a rule"}</p>`);
+  return `<aside class="drawer receipt" aria-label="How this was decided"><header class="drawer-header"><h3>How this was decided</h3>${btn(icon("x"), "close-drawer", "icon-btn", 'aria-label="Close receipt"')}</header><div class="drawer-body"><h3>The request</h3><p>${esc(o.request || (o.historical ? "Weekly order from the kitchen's menu and bookings." : "Prepare next week’s order from our connected menu, bookings and current stock."))}</p><span class="tiny">${esc(o.prepared_by || o.source || "Sanna Virtanen")}${o.request_at ? " · " + stamp(o.request_at) : ""}</span><h3>What Valio checked</h3>${
+    !calls
+      ? S.receiptError
+        ? `<p class="muted">${esc(S.receiptError)}</p>`
+        : '<div class="working"><i class="spinner"></i>Loading the record…</div>'
+      : calls.length
+        ? calls
+            .map(
+              (c) =>
+                `<div class="receipt-entry"><p>${esc(callSummary(c))}</p>${callProducts(c, o)}<p class="tiny">${c.at ? stamp(c.at) : "Time not recorded"}${c.duration_ms ? ` · ${c.duration_ms} ms` : ""} · ${c.source === "Gemini" ? "Gemini reads words only. It never sets a price or quantity." : "Valio Aimo API, customer HC-1001"}</p><details><summary><span style="color:var(--blue)">Details</span></summary><pre>${esc(JSON.stringify({ request: c.request || { method: c.method, path: c.path, customer: c.customer, products: c.product_ids, date: c.requested_date }, response: c.response || { status: c.status, source: c.source, product_count: c.product_count }, checked_at: c.at, timing_ms: c.duration_ms }, null, 2))}</pre></details></div>`,
+            )
+            .join("")
+        : '<p class="muted">No checks were recorded for this order.</p>'
+  }<h3>Rules applied</h3><p class="small muted">Weekly limit ${money(o.budget)}, all orders together → ${(o.week_placed || 0) + o.total > o.budget ? "over, a person had to approve" : "within limit"}</p><p class="small muted">${o.rules.allergens.length ? "No " + esc(o.rules.allergens.join(", ")) + ", including may-contain" : "No kitchen-wide allergen rule"} → ${o.rows.length} products checked against their GS1 allergen declarations</p>${approvals.join("") || '<p class="small muted">Nothing needed a person’s approval.</p>'}${o.status === "placed" ? `<h3>Placed</h3><p class="small muted">${esc(o.placed_by)} · ${stamp(o.placed_at)} · stored as a demo order, nothing ships</p>` : ""}</div></aside>`;
 }
 function why() {
   const o = S.readOrder || S.order;
   const r = o.rows.find((r) => r.id === S.why);
   if (!r) return "";
-  const a = r.allocations;
-  return `<div class="popover why-popover" role="dialog" aria-label="Why this product" style="right:${S.whyPos?.right || 24}px;top:${S.whyPos?.top || 160}px"><div class="between"><h3>Why this product</h3>${btn(icon("x"), "close-why", "icon-btn", 'aria-label="Close explanation"')}</div><p>${a.map((p) => `${esc(p.dish)} · ${p.covers} guests × ${p.per_cover} g/ml = ${p.amount.toFixed(2)} ${esc(r.unit)}.`).join(" ")} In stock: ${r.stock} ${esc(r.unit)}. Ordering ${r.units} × ${r.pack} ${esc(r.unit)} packs = ${r.ordered} ${esc(r.unit)}.</p><p class="small muted" style="margin-top:12px">${esc(r.reason)}</p><p class="tiny">Price ${money(r.comparison_price || r.unit_price)}/${esc(r.comparison_unit || r.unit)} and stock from Valio, checked ${time(o.quote_at)}.</p></div>`;
+  const a = r.allocations || [];
+  const u = U(r.unit);
+  const per = r.unit === "l" ? "ml" : "g";
+  const maths = a.length
+    ? `<p>${a.map((p) => `${esc(p.dish)} · ${p.covers} guests × ${num(p.per_cover)} ${per} = ${num(p.amount)} ${u}.`).join(" ")} In stock or already ordered: ${num(r.stock)} ${u}. Ordering ${r.units} × ${num(r.pack)} ${u} = ${num(r.ordered)} ${u}.</p>`
+    : "";
+  const options = r.options
+    ? `<div class="offers">${r.options
+        .slice(0, 6)
+        .map(
+          (x) =>
+            `<div class="offer ${x.product_id === r.product_id ? "chosen" : ""}"><div><span class="offer-rank ${x.rank ? "" : "muted"}">${esc(x.rank || (x.status === "ok" ? "Also fits" : "Not possible"))}</span> ${esc(x.name)}</div><div class="small muted">${money(x.price_per_unit)}/${U(x.pack_unit)} · ${money(x.total)}${x.note ? " · " + esc(x.note) : ""}</div></div>`,
+        )
+        .join("")}</div>`
+    : "";
+  return `<div class="popover why-popover" role="dialog" aria-label="Why this product" style="right:${S.whyPos?.right || 24}px;top:${S.whyPos?.top || 160}px"><div class="between"><h3>Why this product</h3>${btn(icon("x"), "close-why", "icon-btn", 'aria-label="Close explanation"')}</div>${maths}<p class="small muted" style="margin-top:12px">${esc(r.reason)}</p>${options}<p class="tiny">Price ${money(r.comparison_price || r.unit_price)}/${esc(U((r.comparison_unit || r.unit || "").toLowerCase()))} and stock from Valio, checked ${time(o.quote_at)}.</p></div>`;
 }
 function invoice() {
   const o = S.account.orders.find((o) => o.order_number === S.invoice);
-  return `<div class="popover" role="dialog" aria-label="Invoice" style="right:24px;top:120px;width:560px"><div class="between"><h3>Invoice · ${esc(o.order_number)}</h3>${btn(icon("x"), "close-invoice", "icon-btn", 'aria-label="Close invoice"')}</div><p class="muted">Hotel Aurora · ${date(o.placed_at)}</p><p style="margin-top:16px">Total ${money(o.total)}</p><p class="tiny">Sample account invoice. Past quantities valued with Valio customer prices, checked ${date(o.price_checked_at)}.</p><div style="margin-top:16px">${table(["Product", "Quantity", "Total"], o.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.units}</td><td class="money">${money(r.total)}</td></tr>`).join(""))}</div></div>`;
+  const vat = 13.5;
+  const groups = (o.deliveries || []).map((d) => {
+    const rows = (o.rows || []).filter((r) => r.delivery === d.date && r.units > 0);
+    return `<h4 class="invoice-day">Delivered ${date(d.date, true)}<span>${money(d.subtotal)}</span></h4>${table(["Product", "Quantity", "Unit price", "Total"], rows.map((r) => `<tr><td>${esc(r.name)}<span class="tiny">${packLabel(r)}</span></td><td>${r.units}</td><td class="money">${money(r.unit_price)}</td><td class="money">${money(r.total)}</td></tr>`).join(""))}`;
+  });
+  return `<div class="popover invoice-popover" role="dialog" aria-label="Invoice"><div class="between"><h3>Invoice · ${esc(o.order_number)}</h3>${btn(icon("x"), "close-invoice", "icon-btn", 'aria-label="Close invoice"')}</div><p class="muted">Hotel Aurora · Customer HC-1001 · ordered ${date(o.placed_at)}</p>${groups.join("")}<div class="invoice-total"><div class="summary-row"><span>Total excluding VAT</span><span>${money(o.total)}</span></div><div class="summary-row"><span>VAT ${vat}% (food)</span><span>${money(o.total * vat / 100)}</span></div><div class="summary-row strong"><span>Total including VAT</span><span>${money(o.total * (1 + vat / 100))}</span></div></div><p class="tiny">Sample account invoice. Past quantities are valued with Valio customer prices checked ${date(o.price_checked_at)}.</p></div>`;
 }
 let catalogueRequest = 0;
 async function loadCatalogue(q = "") {
@@ -652,13 +835,86 @@ async function loadCatalogue(q = "") {
     render();
   }
 }
-async function mutate(action, value) {
-  return await task(async () => {
-    S.order = await api("/drafts/" + S.order.draft_id + "/change", {
-      action,
-      value,
-    });
+let changeQueue = Promise.resolve();
+const queuedQty = {};
+const round2 = (n) => Math.round(n * 100) / 100;
+function retotal(o) {
+  o.deliveries.forEach((d) => {
+    d.subtotal = round2(d.rows.reduce((n, r) => n + r.total, 0));
   });
+  o.total = round2(o.rows.reduce((n, r) => n + r.total, 0));
+  o.pending = o.checks.filter((c) => !c.approved).length;
+  o.can_place = false; // the server confirms before anything can be placed
+}
+function localChange(action, value) {
+  const o = S.order;
+  if (action === "quantity") {
+    [o.rows, ...o.deliveries.map((d) => d.rows)].forEach((rows) => {
+      const r = rows.find((r) => r.id === value.id);
+      if (!r) return;
+      r.units = value.units;
+      r.total = round2(value.units * r.unit_price);
+      r.ordered = round2(value.units * r.pack);
+    });
+    o.checks.forEach((c) => {
+      if (c.approved && c.row_ids.includes(value.id)) {
+        c.approved = false;
+        c.reopened = true;
+      }
+    });
+  }
+  if (action === "approve" || action === "unapprove") {
+    const c = o.checks.find((c) => c.id === value);
+    if (c) {
+      c.approved = action === "approve";
+      c.reopened = false;
+      c.approved_by = "Sanna";
+      c.approved_at = new Date().toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Europe/Helsinki",
+      });
+    }
+  }
+  retotal(o);
+}
+// The screen answers at once; the server re-checks in order and has the last word.
+function mutate(action, value) {
+  const id = S.order.draft_id;
+  S.error = "";
+  if (["quantity", "approve", "unapprove"].includes(action))
+    localChange(action, value);
+  if (action === "quantity") {
+    const waiting = value.id in queuedQty;
+    queuedQty[value.id] = value.units;
+    if (waiting) {
+      render();
+      return changeQueue;
+    }
+  }
+  pendingChanges++;
+  render();
+  changeQueue = changeQueue.then(async () => {
+    let body = { action, value };
+    if (action === "quantity") {
+      body.value = { id: value.id, units: queuedQty[value.id] };
+      delete queuedQty[value.id];
+    }
+    try {
+      const out = await api("/drafts/" + id + "/change", body);
+      pendingChanges--;
+      if (!pendingChanges && S.order.draft_id === id) S.order = out;
+    } catch (e) {
+      pendingChanges--;
+      S.error = e.message;
+      try {
+        if (!pendingChanges) S.order = await api("/drafts/" + id);
+      } catch {}
+    }
+    if (!["INPUT"].includes(document.activeElement?.tagName) || !pendingChanges)
+      render();
+  });
+  return changeQueue;
 }
 async function send() {
   if (S.working) return;
@@ -673,13 +929,18 @@ async function send() {
   S.input = "";
   S.working = true;
   S.question = "";
-  S.steps = [{ label: stageNames[0], done: false }];
+  S.error = "";
+  S.asked = false;
+  S.editing = false;
+  S.steps = [{ label: "Reading your request", done: false }];
   if (S.path !== "/dashboard") {
     S.path = "/dashboard";
+    S.readOrder = null;
     history.pushState({}, "", "/dashboard");
   }
   render();
   try {
+    await changeQueue;
     if (S.order.status === "placed") {
       S.order = await api("/drafts", {});
       localStorage.setItem(draftStorageKey(), S.order.draft_id);
@@ -741,11 +1002,13 @@ async function send() {
           if (event.order.question) {
             S.question = event.order.question;
             S.questionContext = event.order.reading?.transcript || S.request;
-            S.input = text;
           } else {
             S.order = event.order;
+            S.asked = true;
             S.replaceEventId = null;
-            S.filter = "changed";
+            S.filter = event.order.rows.some((r) => r.change)
+              ? "changed"
+              : "all";
           }
           S.media = null;
           S.mediaName = "";
@@ -958,37 +1221,26 @@ document.addEventListener("click", async (e) => {
   if (!b) return;
   const action = b.dataset.action;
   const value = b.dataset.value;
-  if (["company", "account-menu", "menu", "allergen"].includes(action)) {
-    if (action === "company") S.companyNote = true;
+  if (["account-menu", "menu", "allergen", "toggle-token"].includes(action)) {
+    if (action === "toggle-token") S.showToken = !S.showToken;
     if (action === "account-menu") S.accountMenu = !S.accountMenu;
     if (action === "menu") S.menu = !S.menu;
     if (action === "allergen") S.addAllergen = true;
     render();
     return;
   }
-  if (action === "login") {
-    await task(async () => {
-      await api("/login", {});
-      S.notice = "";
-      S.companyNote = false;
-      S.account = await api("/account");
-      await ensureDraft();
-      navigate("/dashboard");
-    });
-    return;
-  }
   if (action === "logout") {
     await stopMicrophone(true);
     await task(async () => {
       await api("/logout", {});
-      S.path = "/";
-      history.pushState({}, "", "/");
-      S.account = null;
-      S.order = null;
+      location.href = "/";
     });
     return;
   }
   if (action === "ask") {
+    if (S.order?.status === "placed" || S.readOrder) {
+      S.readOrder = null;
+    }
     S.drawer = "ask";
     S.bell = false;
     render();
@@ -1009,7 +1261,45 @@ document.addEventListener("click", async (e) => {
   }
   if (action === "receipt") {
     S.drawer = "receipt";
+    S.receipt = null;
+    S.receiptError = "";
     render();
+    const o = S.readOrder || S.order;
+    try {
+      S.receipt = o.draft_id
+        ? await api("/drafts/" + o.draft_id + "/receipt")
+        : { calls: [] };
+    } catch (e) {
+      S.receiptError = e.message;
+    }
+    render();
+    return;
+  }
+  if (action === "remove-extra") {
+    await mutate(action, value);
+    return;
+  }
+  if (action === "allergen-remove") {
+    await saveRule(
+      "allergens",
+      S.account.rules.allergens.filter(
+        (a) => a !== value && !(value === "nuts" && a === "peanuts"),
+      ),
+    );
+    return;
+  }
+  if (action === "regenerate-token") {
+    if (
+      !confirm(
+        "Replace the access token? Assistants using the old token stop working until you give them the new one.",
+      )
+    )
+      return;
+    await task(async () => {
+      S.account.mcp_token = (await api("/mcp-token", {})).mcp_token;
+      S.showToken = true;
+      S.notice = "New token created. The old one no longer works.";
+    });
     return;
   }
   if (action === "bell") {
@@ -1092,8 +1382,10 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (action === "place") {
+    await changeQueue;
     await task(async () => {
       S.order = await api("/drafts/" + S.order.draft_id + "/place", {});
+      S.account = await api("/account");
       S.drawer = null;
       navigate("/orders/confirmation");
     });
@@ -1111,20 +1403,34 @@ document.addEventListener("click", async (e) => {
         S.order = await api("/drafts", {});
         localStorage.setItem(draftStorageKey(), S.order.draft_id);
       }
+      const day = b.dataset.delivery;
       S.order = await api("/drafts/" + S.order.draft_id + "/change", {
         action: "add",
-        value,
+        value: { product_id: value, delivery: day },
       });
-      S.notice = "Added to next week’s order.";
+      const row = S.order.rows.find((r) => r.id === "extra-" + value);
+      S.notice = `Added ${b.dataset.name} to the ${date(day, true)} delivery${row ? ` (${row.units} on the order, ${money(row.total)})` : ""}.`;
     });
     return;
   }
   if (action === "copy") {
+    const what = b.dataset.copy || "url";
+    const text =
+      what === "token"
+        ? S.account.mcp_token
+        : what === "connector"
+          ? S.account.mcp_url + "?token=" + S.account.mcp_token
+          : S.account.mcp_url;
     try {
-      await navigator.clipboard.writeText(S.account.mcp_url);
-      S.notice = "MCP address copied.";
+      await navigator.clipboard.writeText(text);
+      S.notice =
+        what === "token"
+          ? "Token copied."
+          : what === "connector"
+            ? "Connector address copied. Keep it private."
+            : "MCP address copied.";
     } catch {
-      S.notice = "Select and copy the MCP address above.";
+      S.notice = "Copying is blocked in this browser. Show the token and copy it by hand.";
     }
     render();
     return;
@@ -1132,7 +1438,11 @@ document.addEventListener("click", async (e) => {
   if (action === "allergen-confirm") {
     const a = $("#new-allergen").value;
     S.addAllergen = false;
-    await saveRule("allergens", [...S.account.rules.allergens, a]);
+    await saveRule("allergens", [
+      ...S.account.rules.allergens,
+      a,
+      ...(a === "nuts" ? ["peanuts"] : []),
+    ]);
     return;
   }
   if (action === "edit-reading") {
@@ -1233,6 +1543,16 @@ document.addEventListener("change", async (e) => {
     render();
     return;
   }
+  if (e.target.dataset.qty) {
+    const units = Math.round(Number(e.target.value));
+    if (!Number.isFinite(units) || units < 0 || units > 9999) {
+      S.error = "Use a whole number of packs from 0 to 9999.";
+      render();
+      return;
+    }
+    mutate("quantity", { id: e.target.dataset.qty, units });
+    return;
+  }
   if (e.target.dataset.rule) {
     const key = e.target.dataset.rule;
     const value =
@@ -1264,6 +1584,7 @@ document.addEventListener("keydown", async (e) => {
     render();
     $("#ask-input")?.focus();
   }
+  if (e.key === "Enter" && e.target.matches("[data-qty]")) e.target.blur();
   if (
     e.key === "Enter" &&
     e.target.matches("tr[data-open-order],tr[data-open-draft]")
@@ -1280,6 +1601,7 @@ setInterval(() => {
     S.account &&
     !S.working &&
     !S.busy &&
+    !pendingChanges &&
     document.visibilityState === "visible"
   )
     refreshAccount();

@@ -13,31 +13,13 @@ def test_conditional_update_prevents_lost_orders(monkeypatch, tmp_path):
     assert s.get("ledger")[0]["orders"] == [1]
 
 
-def test_private_blob_read_uses_exact_returned_path(monkeypatch):
-    # Regression: an arbitrary cache-buster query made private Blob return 404.
-    from chefagent import account_store as a
-
-    monkeypatch.setenv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_storeid_test")
-    seen = []
-
-    class R:
-        status_code = 200
-        headers = {"etag": "v1"}
-
-        def json(self):
-            return {"orders": []}
-
-        def raise_for_status(self):
-            pass
-
-    def get(url, **kw):
-        seen.append((url, kw))
-        return R()
-
-    monkeypatch.setattr(a.httpx, "get", get)
-    assert Store().get("ledger")[0] == {"orders": []}
-    assert seen[0][1]["headers"]["Accept-Encoding"] == "identity"
-    assert "?" not in seen[0][0] and seen[0][1]["params"] == {"cache": "0"}
+def token_for(account, monkeypatch, tmp_path):
+    from chefagent import portal as p
+    from chefagent.account_scope import kitchen_scope
+    monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
+    monkeypatch.setenv("AURORA_LOCAL_DB", str(tmp_path / "tokens.db"))
+    with kitchen_scope(account):
+        return p.mcp_token()
 
 
 @pytest.fixture(scope="module")
@@ -48,14 +30,15 @@ def live_client():
         yield client
 
 
-def test_mcp_manager_is_running_with_application_lifespan(live_client):
-    from fastapi.testclient import TestClient
-    from api.index import app
-
+def test_mcp_manager_is_running_with_application_lifespan(live_client, monkeypatch, tmp_path):
     c=live_client
+    token = token_for("aurora", monkeypatch, tmp_path)
+    # Regression: the door was open to anyone. No token or a wrong token is refused.
+    assert c.post("/mcp/", headers={"Accept": "application/json, text/event-stream"}, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).status_code == 401
+    assert c.post("/mcp/", headers={"Accept": "application/json, text/event-stream", "Authorization": "Bearer " + token[:-3] + "abc"}, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).status_code == 401
     r = c.post(
         "/mcp/",
-        headers={"Accept": "application/json, text/event-stream"},
+        headers={"Accept": "application/json, text/event-stream", "Authorization": "Bearer " + token},
         json={
             "jsonrpc": "2.0",
             "id": 1,
@@ -108,15 +91,17 @@ def test_mcp_tools_use_request_kitchen_not_global_account(monkeypatch,tmp_path,l
     monkeypatch.delenv('BLOB_READ_WRITE_TOKEN',raising=False)
     monkeypatch.setenv('AURORA_LOCAL_DB',str(tmp_path/'mcpscope.db'))
     seen=[]
-    def prepared(text):
+    def prepared(text, parsed=None):
         seen.append(account_id())
         return {'question':'Which breakfast?'}
-    monkeypatch.setattr(p,'prepare_assistant',prepared)
-    headers={'Accept':'application/json, text/event-stream','x-valio-test-run':'c'*32}
+    monkeypatch.setattr(p,'assistant_request',prepared)
+    test_token=token_for('test-'+'c'*32,monkeypatch,tmp_path)
+    aurora_token=token_for('aurora',monkeypatch,tmp_path)
+    headers={'Accept':'application/json, text/event-stream','Authorization':'Bearer '+test_token}
     c=live_client
     r=c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','id':1,'method':'tools/call','params':{'name':'prepare_order','arguments':{'request':'breakfast'}}})
     assert r.status_code==200
     assert seen==['test-'+'c'*32]
-    del headers['x-valio-test-run']
+    headers['Authorization']='Bearer '+aurora_token
     c.post('/mcp/',headers=headers,json={'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'prepare_order','arguments':{'request':'breakfast'}}})
     assert seen[-1]=='aurora'

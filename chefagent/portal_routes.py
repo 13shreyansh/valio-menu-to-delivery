@@ -20,7 +20,7 @@ def signed_in(req: Request):
     if (
         origin
         and origin.rstrip("/") != str(req.base_url).rstrip("/")
-        and origin != "https://valio-menu-to-delivery.vercel.app"
+        and origin.rstrip("/") != p.SITE
     ):
         raise k.KitchenError("Open this order in your Valio account.")
 
@@ -56,25 +56,42 @@ async def rules(req: Request):
     return p.save_rules(await req.json())
 
 
+@router.post("/mcp-token", dependencies=[Depends(signed_in)])
+def new_token():
+    return {"mcp_token": p.mcp_token(regenerate=True)}
+
+
+@router.get("/warm")
+def warm():
+    # Public and harmless: loads the catalogue so the first signed-in screen is quick.
+    from .catalog import load
+    return {"ok": True, "products": len(load().items)}
+
+
 @router.post("/drafts", dependencies=[Depends(signed_in)])
 def new():
-    return p.new_draft()
+    return p.slim(p.new_draft())
 
 
 @router.get("/drafts/{draft_id}", dependencies=[Depends(signed_in)])
 def get(draft_id: str):
-    return p.get_draft(draft_id)
+    return p.slim(p.get_draft(draft_id))
+
+
+@router.get("/drafts/{draft_id}/receipt", dependencies=[Depends(signed_in)])
+def receipt(draft_id: str):
+    return p.receipt(draft_id)
 
 
 @router.post("/drafts/{draft_id}/change", dependencies=[Depends(signed_in)])
 async def change(draft_id: str, req: Request):
     body = await req.json()
-    return p.change(draft_id, body.get("action"), body.get("value"))
+    return p.slim(p.change(draft_id, body.get("action"), body.get("value")))
 
 
 @router.post("/drafts/{draft_id}/place", dependencies=[Depends(signed_in)])
 def place(draft_id: str):
-    return p.place(draft_id)
+    return p.slim(p.place(draft_id))
 
 
 @router.get("/catalogue", dependencies=[Depends(signed_in)])
@@ -107,10 +124,16 @@ async def ask(req: Request):
             attention = False
             if stage == "read":
                 reading.update(data)
-                result = f"{len(data['dishes'])} dishes, {sum(len(p.f.RECIPES[d['recipe']]['ingredients']) for d in data['dishes'])} ingredients"
+                n = sum(len(d.get("ingredients") or p.f.RECIPES.get(d.get("recipe"), {}).get("ingredients", [])) for d in data.get("dishes", []))
+                parts = []
+                if data.get("dishes"):
+                    parts.append(f"{len(data['dishes'])} dish{'es' if len(data['dishes']) != 1 else ''}, {n} ingredients")
+                if data.get("products"):
+                    parts.append(f"{len(data['products'])} product request{'s' if len(data['products']) != 1 else ''}")
+                result = ", ".join(parts) or {"close": "kitchen closed", "note": "guest needs noted"}.get(data.get("kind"), "read")
             elif stage == "scaled":
                 result = "for " + __import__("datetime").date.fromisoformat(
-                    reading.get("date", "2026-11-21")
+                    reading.get("date") or "2026-11-16"
                 ).strftime("%A %d %b")
             elif stage == "stock":
                 # These are actual shortlisted product responses, not a canned result.
@@ -135,18 +158,13 @@ async def ask(req: Request):
                 attention = count > 0
             elif stage == "allergens":
                 result = f"{len(data['rows'])} products checked"
-                attention = any(c["kind"] == "gap" for c in data["checks"])
+                attention = any(c["kind"] in ("gap", "allergen", "diet") for c in data["checks"])
+                if any(c["kind"] in ("allergen", "diet") for c in data["checks"]):
+                    result = "needs your attention"
             elif stage == "budget":
-                result = (
-                    f"€{max(0, data['total'] - data['budget']):.2f} over"
-                    if data["total"] > data["budget"]
-                    else "within your limit"
-                )
-                attention = any(
-                    c["kind"] == "budget" and not c["approved"] for c in data["checks"]
-                )
-                if attention and data["total"] <= data["budget"]:
-                    result = "change needs your OK"
+                over = next((c for c in data["checks"] if c["kind"] == "budget" and not c["approved"]), None)
+                attention = bool(over)
+                result = (over.get("title") or "needs your OK") if over else "within your limits"
             q.put(
                 {
                     "type": "step",
@@ -154,6 +172,7 @@ async def ask(req: Request):
                     "result": result,
                     "attention": attention,
                     "covers": data.get("covers") if stage == "read" else None,
+                    "kind": reading.get("kind"),
                     "date": reading.get("date"),
                 }
             )
@@ -167,7 +186,7 @@ async def ask(req: Request):
                 progress=progress,
                 replace_event_id=body.get("replace_event_id"),
             )
-            q.put({"type": "result", "order": out})
+            q.put({"type": "result", "order": p.slim(out)})
         except Exception as exc:
             q.put(
                 {

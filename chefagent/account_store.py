@@ -10,6 +10,9 @@ from .kitchen import KitchenError
 from .account_scope import storage_namespace
 
 
+CLIENT = httpx.Client(timeout=20)  # one pooled connection per warm instance
+
+
 class Conflict(KitchenError):
     pass
 
@@ -17,8 +20,10 @@ class Conflict(KitchenError):
 class Store:
     def __init__(self, namespace=None):
         self.namespace=namespace or storage_namespace()
-        self.token = os.environ.get("BLOB_READ_WRITE_TOKEN")
-        if not self.token and os.environ.get("VERCEL"):
+        self.token = None
+        self.pg = os.environ.get("STORE_URL")
+        self.pg_key = os.environ.get("STORE_KEY")
+        if not self.pg and os.environ.get("VERCEL"):
             raise KitchenError("Account storage is unavailable. Please try again.")
         self.local = Path(os.environ.get("AURORA_LOCAL_DB", "/tmp/valio-aurora.sqlite"))
 
@@ -29,7 +34,50 @@ class Store:
         sid = self.token.split("_")[3]
         return f"https://{sid}.private.blob.vercel-storage.com/{self.namespace}/{key}.json"
 
+    def pg_headers(self):
+        return {
+            "apikey": self.pg_key,
+            "Authorization": "Bearer " + self.pg_key,
+            "x-store-secret": os.environ.get("STORE_SECRET", ""),
+            "Content-Type": "application/json",
+        }
+
+    def pg_get(self, key):
+        r = CLIENT.get(
+            self.pg + "/rest/v1/valio_docs",
+            params={"key": "eq." + self.namespace + "/" + key, "select": "body,version"},
+            headers=self.pg_headers(),
+        )
+        r.raise_for_status()
+        rows = r.json()
+        return (rows[0]["body"], str(rows[0]["version"])) if rows else (None, None)
+
+    def pg_put(self, key, value, version):
+        full = self.namespace + "/" + key
+        if version:
+            r = CLIENT.patch(
+                self.pg + "/rest/v1/valio_docs",
+                params={"key": "eq." + full, "version": "eq." + str(version)},
+                headers={**self.pg_headers(), "Prefer": "return=representation"},
+                content=json.dumps({"body": value, "version": int(version) + 1}),
+            )
+            if r.is_success and not r.json():
+                raise Conflict("This order changed in another window. Reload before trying again.")
+        else:
+            r = CLIENT.post(
+                self.pg + "/rest/v1/valio_docs",
+                headers={**self.pg_headers(), "Prefer": "return=minimal"},
+                content=json.dumps({"key": full, "body": value, "version": 1}),
+            )
+            if r.status_code == 409:
+                raise Conflict("This order changed in another window. Reload before trying again.")
+        if not r.is_success:
+            raise KitchenError("Account storage is unavailable. Please try again.")
+        return str(int(version or 0) + 1)
+
     def get(self, key):
+        if self.pg:
+            return self.pg_get(key)
         if self.token:
             r = httpx.get(
                 self.url(key),
@@ -56,6 +104,8 @@ class Store:
             return (json.loads(row[0]), str(row[1])) if row else (None, None)
 
     def put(self, key, value, version=None):
+        if self.pg:
+            return self.pg_put(key, value, version)
         if self.token:
             h = {
                 **self.headers(),

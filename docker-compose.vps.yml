@@ -1,0 +1,24 @@
+# Valio on the shared VPS, as its own container behind the existing Traefik.
+# Secrets come from /opt/valio/.env on the server (never in git):
+#   VALIO_API_KEY, GEMINI_API_KEY, KITCHEN_SIGNING_KEY
+services:
+  valio:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PUBLIC_URL: https://valio.72.61.22.106.sslip.io
+    volumes:
+      - valio-data:/data
+    networks: [proxy]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.valio.rule=Host(`valio.72.61.22.106.sslip.io`)
+      - traefik.http.routers.valio.entrypoints=websecure
+      - traefik.http.routers.valio.tls.certresolver=letsencrypt
+      - traefik.http.services.valio.loadbalancer.server.port=8000
+volumes:
+  valio-data:
+networks:
+  proxy:
+    external: true

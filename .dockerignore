@@ -1,0 +1,12 @@
+.git
+.venv
+node_modules
+artifacts
+data
+eval
+tests
+scripts
+exports
+projects
+*.log
+.env
